@@ -347,7 +347,8 @@ Assalamualaikum hai malaikat penjaga nadi 10, aku tahu akan asal usul mu, raja k
 2. **Maksud "(ق ١٠٠ كالي)" pada doa m/s 218.** Perlu disahkan: sama ada huruf "Qaf" disebut 100 kali, atau seluruh doa itu dibaca 100 kali.
 3. **Sumber Doa Nadi 10.** Perlu gambar kulit atau halaman judul buku, serta nombor halaman. Bacaan Rumi saya bagi kepala halaman Jawi ("Panduan Amalan dan Hala Tuju Ahli-ahli Abjad Malaysia") belum disahkan.
 4. **Kaifiat Doa Nadi 10.** Halaman yang dihantar tiada arahan bilangan atau waktu bacaan. Kalau buku itu ada arahannya di halaman lain, perlu gambar itu.
-5. **Maksud Melayu bagi ayat-ayat (hanya jika hendak dijadikan booklet).** Kitab memberi teks Arab sahaja. Booklet ikut konvensyen (maksud terus di bawah setiap baris) memerlukan sumber terjemahan yang dipilih, contohnya Tafsir Pimpinan Ar-Rahman.
+5. **Permulaan Langkahan Adam dan Hawa (m/s 139-140).** Bahagian ini menyusul selepas adab dan bersambung ke m/s 140. Kalau ia sebahagian amalan sebelum hizib, perlu gambar m/s 140 dan seterusnya; buat masa ini ia tidak dimasukkan dalam susunan.
+6. **Maksud Melayu bagi ayat-ayat.** Kitab memberi teks Arab sahaja. Maksud dalam booklet ialah terjemahan ringkas penyusun mengikut segmen, kerana sumber terjemahan rasmi (Tafsir Pimpinan Ar-Rahman) tidak dapat dicapai dari persekitaran kerja. Boleh diganti kemudian.
 
 ---
 
@@ -355,7 +356,17 @@ Assalamualaikum hai malaikat penjaga nadi 10, aku tahu akan asal usul mu, raja k
 
 - **Kepala halaman Pemuda Tauhid:** m/s genap "Pemuda Tauhid" (Rumi), m/s ganjil "ڤمودا توحيد" (Jawi).
 - **Ejaan dalam kitab berbeza-beza** dan dikekalkan: "kejab" (m/s 136) dan "kejap" (m/s 138); "sekelian" dan "sekalian"; "ruhani" dan "rohani"; "Karramahu Wajhah" (m/s 136) dan "Karamallahu Wajhah" (m/s 137).
-- **m/s 139, selepas adab:** bahagian baharu bermula dengan tajuk tebal yang terpotong dalam gambar (serpihan "PERMUL...", "...NGKAHAN", "ADAM D..."). Bukan sebahagian adab.
+- **m/s 139, selepas adab:** bermula bahagian baharu yang bersambung ke m/s 140 (belum diterima). Teks yang kelihatan, verbatim:
+
+  > **PERMULAAN LANGKAHAN ADAM DAN HAWA**
+  >
+  > Tidak dapat tidak bagi setiap mereka yang mewarisi Pusaka Khalifah Wali Agama Islam (Abjad) hendaklah memulakan pekerjaan agama dengan mengambil langkahan menuju kehadapan mengikuti perjalanan Anbiya’ dan Auliya’ bagi mencapai darjat menang mutlak. Dengan diisyarat pandang mata hati ‘basiroh’ kepada tapak permulaan langkahan Nabi Adam dan Hawa ‘Alaihimas Salam mengikuti perintah Allah dengan menerima petunjuk (wahyu) berada pada nuktah (titik) umpama titik pada huruf ba permulaan membaca بسم الله الرحمن الرحيم dengan adakan isyarat sebelah kanan dirinya Adam dan sebelah kiri dirinya Hawa mengikut tandanya pada badan, kemudian menumpukan muka dan diri kepada Allah seumpama Rasulullah SAW dan Mahaguru Sultan Auliya’ Sayyidi Sheikh Muhyiddin Abdul Qadir Al-Jilani.
+  >
+  > Menuntuti kemuliaan menzahirkan kekuatan manaqib karamah rohani jasmani selama-lamanya.
+  >
+  > Kemudian D... n dengan qasad pada mata hati umpama b... *(terlindung jari dalam gambar; bersambung ke m/s 140)*
+
+  Perkataan "(Abjad)" di sini sama dengan "ابجد" pada kepala halaman buku Doa Nadi 10 (pemerhatian saya).
 - **m/s 212, bahagian atas:** penutup bacaan sebelumnya, bukan sebahagian Hizib Qhaf 10 (hanya sebahagian kelihatan):
 
 ```text
@@ -366,4 +377,5 @@ Assalamualaikum hai malaikat penjaga nadi 10, aku tahu akan asal usul mu, raja k
 ```
 
 - **m/s 221, selepas Al-Fatihah:** tajuk tebal bermula "KAIFIAT" (kelihatan di tepi gambar m/s 220) dan serpihan "...WAL 7", diikuti teks Rumi. Berdasarkan corak m/s 212, berkemungkinan kaifiat bagi hizib seterusnya (tafsiran saya, belum disahkan). Bukan sebahagian Hizib Qhaf 10.
-- **Gambar asal:** m/s 217-221 tersimpan dalam `MEMORI/gambar/`. Gambar m/s 136-139, m/s 212-216 dan Doa Nadi 10 dihantar semasa sesi sedang berjalan dan tidak tersimpan sebagai fail; teksnya disalin daripada paparan gambar.
+- **Gambar asal:** m/s 136-139 dan 217-221 tersimpan dalam `MEMORI/gambar/`; transkripsi adab m/s 136-139 disemak semula dengan gambar ini dan sepadan. Gambar m/s 212-216 dan Doa Nadi 10 dihantar semasa sesi sedang berjalan dan tidak tersimpan sebagai fail; teksnya disalin daripada paparan gambar.
+- **Booklet:** `booklet/Hizib_Qhaf_10_-_Bacaan_A5.pdf` (bacaan) dan `booklet/Hizib_Qhaf_10_-_Booklet_Cetak_A4.pdf` (cetak dua muka), dijana daripada rekod ini dengan maksud Melayu mengikut segmen (terjemahan penyusun).

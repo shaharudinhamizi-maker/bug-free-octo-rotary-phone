@@ -613,8 +613,12 @@
    "butiran": "Halaman yang dihantar tiada arahan bilangan atau waktu bacaan. Kalau buku itu ada arahannya di halaman lain, perlu gambar itu."
   },
   {
-   "perkara": "Maksud Melayu bagi ayat-ayat (hanya jika hendak dijadikan booklet)",
-   "butiran": "Kitab memberi teks Arab sahaja. Booklet ikut konvensyen (maksud terus di bawah setiap baris) memerlukan sumber terjemahan yang dipilih, contohnya Tafsir Pimpinan Ar-Rahman."
+   "perkara": "Permulaan Langkahan Adam dan Hawa (m/s 139-140)",
+   "butiran": "Bahagian ini menyusul selepas adab dan bersambung ke m/s 140. Kalau ia sebahagian amalan sebelum hizib, perlu gambar m/s 140 dan seterusnya; buat masa ini ia tidak dimasukkan dalam susunan."
+  },
+  {
+   "perkara": "Maksud Melayu bagi ayat-ayat",
+   "butiran": "Kitab memberi teks Arab sahaja. Maksud dalam booklet ialah terjemahan ringkas penyusun mengikut segmen, kerana sumber terjemahan rasmi (Tafsir Pimpinan Ar-Rahman) tidak dapat dicapai dari persekitaran kerja. Boleh diganti kemudian."
   }
  ]
 }
