@@ -35,7 +35,7 @@ Z_CEIL = 10.0                   # siling tingkat bawah / atas dinding dalam
 H_ATTIC = Z_WALL                # tangga naik ke loteng
 ROOF_EAVE_Z = 11.0              # bumbung pelana pada muka luar dinding barat/timur
 RIDGE_X = 22.5                  # perabung utara-selatan (~23.5')
-MAIN_SIDE_OV, MAIN_RAKE_OV = 0.3, 1.0
+MAIN_SIDE_OV, MAIN_RAKE_OV = 0.3, 0.9
 VER_Z_WALL, VER_DROP = 10.5, 2.0   # bumbung veranda: 10.5' di dinding -> 8.5' di tepi luar
 Z_LAWN, Z_GRAVEL = -1.5, -1.25
 CUT = 8.0                       # aras potongan pelan 3D
@@ -509,22 +509,14 @@ def mat_gravel(name):
     return t.done(t.principled(c, 0.8, 0.0, nrm, 0.4), (0.12, 0.12, 0.12))
 
 
-def mat_grass(name):
+def mat_metal_sheet(name, col):
+    """Kepingan zink bercat: atas merah berkilat, bawah kelabu zink."""
     t = NT(name)
-    hi = t.n('ShaderNodeHairInfo')
-    rnd = hi.outputs['Random']
-    c = t.mix((0.028, 0.085, 0.012), (0.085, 0.19, 0.03), rnd)
-    c = t.mix(c, (0.17, 0.19, 0.06), t.math('MULTIPLY', t.math('GREATER_THAN', rnd, 0.88), 0.8))
-    c = t.mix(c, (0.6, 0.7, 0.55), t.math('MULTIPLY', t.noise(t.obj(), 0.4, 3.0), 0.6), 'MULTIPLY')
-    c = t.mix((0.015, 0.04, 0.008), c, t.math('POWER', hi.outputs['Intercept'], 0.5))
-    p = t.principled(c, 0.55, 0.0, None, 0.35)
-    tr = t.n('ShaderNodeBsdfTranslucent')
-    t.set(tr, 'Color', (0.12, 0.25, 0.03))
-    ms = t.n('ShaderNodeMixShader')
-    ms.inputs[0].default_value = 0.3
-    t.link(p, ms.inputs[1])
-    t.link(tr.outputs[0], ms.inputs[2])
-    return t.done(ms.outputs[0], (0.06, 0.15, 0.03))
+    g = t.n('ShaderNodeNewGeometry')
+    base = t.mix(scl(col, 0.9), scl(col, 1.12), t.noise(t.obj(), 1.5, 3.0))
+    base = t.mix(base, (0.42, 0.42, 0.40), g.outputs['Backfacing'])
+    nrm = t.bump(t.noise(t.obj(), 25.0, 3.0), 0.05, 0.002)
+    return t.done(t.principled(base, 0.36, 0.25, nrm, 0.5), col)
 
 
 def mat_emit(name, col, strength):
@@ -596,8 +588,7 @@ def make_materials():
     M['appliance'] = mat_plain('perkakas', (0.90, 0.90, 0.90), 0.3)
     M['book'] = mat_plain('buku', (0.5, 0.35, 0.3), 0.8, var=0.4, vscale=30)
     # --- reka bentuk pengguna: bumbung zink merah, kayu merah-perang ---
-    M['metal'] = mat_plain('zink_merah', (0.30, 0.042, 0.036), 0.36, metal=0.25, var=0.06, vscale=1.5,
-                           bump=0.05, bscale=20, spec=0.5)
+    M['metal'] = mat_metal_sheet('zink_merah', (0.30, 0.042, 0.036))
     M['frame'] = mat_tile('kayu_bingkai', (0.10, 0.026, 0.015), (0.08, 0.02, 0.01), 2.0, 0.6, 0.45, var=0.05,
                           plane='vt', gap=0.0, grain=0.3, bump=0.0, vscale=0)
     M['boards'] = mat_tile('papan_gable', (0.19, 0.072, 0.03), (0.035, 0.015, 0.008), 3.0, 0.17, 0.6,
@@ -612,7 +603,6 @@ def make_materials():
     M['brick'] = mat_tile('bata_merah', (0.30, 0.075, 0.042), (0.42, 0.40, 0.37), 0.215, 0.075, 0.85,
                           var=0.25, plane='v', offset=0.5, gap=0.01, bump=1.0)
     M['gravel'] = mat_gravel('kerikil')
-    M['grass'] = mat_grass('rumput_rambut')
     M['lamp_glass'] = mat_emit('kaca_tanglung', (1.0, 0.78, 0.5), 4.0)
     M['yellow'] = mat_plain('pasu_kuning', (0.72, 0.46, 0.02), 0.12, var=0.05, vscale=4,
                             **{'Coat Weight': 0.6})
@@ -786,7 +776,7 @@ def build_door(bf, bl, bg, o, M, main=False):
 # ---------------------------------------------------------------------------
 def roof_top(x, y=0.0):
     """Bumbung pelana utama 45 darjah, perabung U-S pada X=RIDGE_X."""
-    return ROOF_EAVE_Z + (RIDGE_X - abs(x - RIDGE_X)) - (RIDGE_X - 10.0)
+    return ROOF_EAVE_Z + (RIDGE_X - 10.0) - abs(x - RIDGE_X)
 
 
 def ver_front(x, y):
@@ -1040,7 +1030,7 @@ def build_roofs(C, M):
     sl.box(hole[1], cx1, hole[2], hole[3], Z_CEIL, Z_WALL, M['soffit'], mtop=M['wood'])
     # dinding gable papan kayu (hadapan & belakang) dengan tingkap kecil
     gb = mb('gable', coll)
-    gtop = (lambda x: roof_top(x) - 0.14)
+    gtop = (lambda x: roof_top(x) - 0.04)
     wx0, wx1 = RIDGE_X - 1.25, RIDGE_X + 1.25
     wz0, wz1 = 14.75, 17.25
     gf = mb('tingkap_gable', coll)
@@ -1064,9 +1054,18 @@ def build_roofs(C, M):
     r.prism([(RIDGE_X + dx, ry0 - 0.05, zr + dz) for dx, dz in cap], (0, ry1 - ry0 + 0.1, 0), M['metal'])
     # papan layang (barge) & fasia cucur, gelegar (purlin)
     tb = mb('kayu_bumbung', coll)
-    for yb in (ry0 + 0.06, ry1 - 0.06):
-        tb.beam((ex0, yb, roof_top(ex0) - 0.33), (RIDGE_X, yb, zr - 0.33), 0.12, 0.6, M['post'])
-        tb.beam((RIDGE_X, yb, zr - 0.33), (ex1, yb, roof_top(ex1) - 0.33), 0.12, 0.6, M['post'])
+    bd = 0.95                                            # dalam papan layang
+    for yb in (ry0 + 0.07, ry1 - 0.07):
+        zo = 0.09 - bd / 2 * math.sqrt(2)
+        tb.beam((ex0, yb, roof_top(ex0) + zo), (RIDGE_X, yb, zr + zo), 0.14, bd, M['post'])
+        tb.beam((RIDGE_X, yb, zr + zo), (ex1, yb, roof_top(ex1) + zo), 0.13, bd, M['post'])
+        # papan sofit di bawah unjuran cucur layang
+        yy0, yy1 = (ry0 + 0.14, 0.0) if yb < 15 else (30.0, ry1 - 0.14)
+        for xa, xb in ((ex0, RIDGE_X), (RIDGE_X, ex1)):
+            pa = (xa, roof_top(xa) - bd * math.sqrt(2) + 0.12)
+            pb = (xb, roof_top(xb) - bd * math.sqrt(2) + 0.12)
+            tb.prism([(pa[0], yy0, pa[1]), (pb[0], yy0, pb[1]), (pb[0], yy0, pb[1] + 0.06),
+                      (pa[0], yy0, pa[1] + 0.06)], (0, yy1 - yy0, 0), M['soffit'])
     for xf in (ex0 + 0.06, ex1 - 0.06):
         tb.box(xf - 0.06, xf + 0.06, ry0 + 0.12, ry1 - 0.12, roof_top(xf) - 0.5, roof_top(xf) - 0.04, M['post'])
     for k in range(5):
@@ -1522,8 +1521,8 @@ def canopy(bl, c, rx, rz, mat, core_mat, rng, n, cr, sub=1):
             continue
         t = rng.uniform(0.72, 1.0)
         p = Vector((c[0] + v.x * rx * t, c[1] + v.y * rx * t, c[2] + v.z * rz * t))
-        bl.blob(p, cr * rng.uniform(0.7, 1.3), mat, sub=sub, squash=0.8, rough=0.35, seed=rng.randint(0, 999),
-                smooth=False)
+        bl.blob(p, cr * rng.uniform(0.7, 1.3), mat, sub=sub, squash=0.8, rough=0.45, seed=rng.randint(0, 999),
+                smooth=True)
 
 
 def tree(b, bl, x, y, h, r, rng, mat_leaf, M, z0=Z_LAWN, sub=2, far=False):
@@ -1547,7 +1546,7 @@ def tree(b, bl, x, y, h, r, rng, mat_leaf, M, z0=Z_LAWN, sub=2, far=False):
             c = Vector((x + math.cos(az) * r * 0.42, y + math.sin(az) * r * 0.42, z0 + hc + rng.uniform(-0.1, 0.25) * r))
             rr = r * rng.uniform(0.55, 0.7)
         n = 45 if far else int(70 * (rr / 5.0) ** 1.6) + 30
-        canopy(bl, c, rr, rr * 0.72, mat_leaf, M['leaf2'], rng, n, rr * (0.3 if far else 0.17))
+        canopy(bl, c, rr, rr * 0.72, mat_leaf, M['leaf2'], rng, n, rr * (0.3 if far else 0.17), sub=1 if far else 2)
 
 
 def pot_plant(b, bl, x, y, r, z0, kind, rng, M):
@@ -1664,7 +1663,8 @@ def setup_world(sc, sun_el, strength=1.0, sun_energy=4.0, clouds=True):
     sky.sun_rotation = math.radians(SUN_AZ)
     sky.altitude = 50.0
     sky.air_density = 1.0
-    sky.aerosol_density = 0.6
+    sky.aerosol_density = 0.35
+    sky.air_density = 1.15
     col = sky.outputs[0]
     if clouds:
         # awan prosedural: unjuran arah pandang ke satah awan
@@ -1712,7 +1712,7 @@ def setup_world(sc, sun_el, strength=1.0, sun_energy=4.0, clouds=True):
     L.new(col, bg.inputs[0])
     # langit kelihatan sedikit lebih gelap daripada cahaya yang diberi (kesan penapis polar)
     lp = N.new('ShaderNodeLightPath')
-    k = mth('ADD', strength, mth('MULTIPLY', lp.outputs['Is Camera Ray'], -0.3 * strength))
+    k = mth('ADD', strength, mth('MULTIPLY', lp.outputs['Is Camera Ray'], -0.4 * strength))
     L.new(k, bg.inputs['Strength'])
     out = N.new('ShaderNodeOutputWorld')
     L.new(bg.outputs[0], out.inputs[0])
@@ -1725,44 +1725,6 @@ def setup_world(sc, sun_el, strength=1.0, sun_energy=4.0, clouds=True):
     az, el = math.radians(SUN_AZ), math.radians(sun_el)
     d = Vector((math.sin(az) * math.cos(el), math.cos(az) * math.cos(el), math.sin(el)))
     ob.rotation_euler = d.to_track_quat('Z', 'Y').to_euler()
-    return ob
-
-
-def build_grass(C, M, count=40000):
-    """Rumput rambut (partikel) di kawasan hadapan sahaja; bukan di laluan batu."""
-    b = MB('rumput_dekat', C['grass'])
-    yb, yt = -62.0, -6.3
-    for x0, x1 in ((-45.0, 16.3), (21.7, 75.0)):
-        b.face([(x0, yb, Z_LAWN + 0.005), (x1, yb, Z_LAWN + 0.005), (x1, yt, Z_LAWN + 0.005),
-                (x0, yt, Z_LAWN + 0.005)], M['lawn'])
-    for y0, y1, x0, x1 in ((-6.3, 40.0, 41.2, 75.0), (-6.3, 40.0, -45.0, -0.2)):
-        b.face([(x0, y0, Z_LAWN + 0.005), (x1, y0, Z_LAWN + 0.005), (x1, y1, Z_LAWN + 0.005),
-                (x0, y1, Z_LAWN + 0.005)], M['lawn'])
-    ob = b.build()
-    md = ob.modifiers.new('rumput', 'PARTICLE_SYSTEM')
-    ps = md.particle_system.settings
-    ps.type = 'HAIR'
-    ps.count = count
-    ps.hair_length = 0.11
-    ps.emit_from = 'FACE'
-    ps.use_advanced_hair = True
-    ps.normal_factor = 1.0
-    ps.factor_random = 0.45
-    ps.child_type = 'INTERPOLATED'
-    ps.child_percent = 10
-    ps.rendered_child_count = 12
-    ps.child_length = 1.0
-    ps.child_length_threshold = 0.3
-    ps.roughness_1 = 0.03
-    ps.roughness_endpoint = 0.02
-    ps.root_radius = 0.0012
-    ps.tip_radius = 0.0001
-    ps.radius_scale = 1.0
-    ps.display_step = 2
-    ps.render_step = 2
-    ob.data.materials.append(M['grass'])
-    ps.material = len(ob.data.materials)
-    ob.show_instancer_for_render = False
     return ob
 
 
@@ -1813,7 +1775,6 @@ VIEWS = {
     'udara': dict(file='Render_3D_Udara.jpg', sun_el=46.0),
 }
 SKY_STRENGTH, SUN_ENERGY = 0.45, 4.2
-NO_GRASS = False
 
 
 def build_scene():
@@ -1826,7 +1787,7 @@ def build_scene():
     BUILDERS.clear()
     sc = bpy.context.scene
     C = {}
-    for k in ('common', 'full', 'cut', 'ctx', 'grass'):
+    for k in ('common', 'full', 'cut', 'ctx'):
         c = bpy.data.collections.new(k)
         sc.collection.children.link(c)
         C[k] = c
@@ -1845,7 +1806,6 @@ def build_scene():
     build_lights(C)
     for b in BUILDERS:
         b.build()
-    build_grass(C, M)
     return sc, C
 
 
@@ -1855,7 +1815,7 @@ def setup_render(sc, width, samples, quick):
     cy.device = 'CPU'
     cy.samples = samples
     cy.use_adaptive_sampling = True
-    cy.adaptive_threshold = 0.03 if quick else 0.012
+    cy.adaptive_threshold = 0.03 if quick else 0.015
     cy.use_denoising = True
     cy.denoiser = 'OPENIMAGEDENOISE'
     cy.denoising_input_passes = 'RGB_ALBEDO_NORMAL'
@@ -1874,10 +1834,6 @@ def setup_render(sc, width, samples, quick):
     sc.render.resolution_percentage = 100
     sc.view_settings.view_transform = 'AgX'
     sc.view_settings.look = 'AgX - Medium High Contrast'
-    try:
-        sc.cycles_curves.shape = 'RIBBONS'
-    except AttributeError:
-        pass
     sc.render.image_settings.file_format = 'JPEG'
     sc.render.image_settings.quality = 92
 
@@ -1887,7 +1843,6 @@ def apply_view(sc, C, view):
     pelan = view == 'pelan'
     C['full'].hide_render = pelan
     C['cut'].hide_render = not pelan
-    C['grass'].hide_render = view != 'luar' or NO_GRASS
     for ob in list(sc.collection.objects):
         if ob.type in ('CAMERA', 'LIGHT'):
             bpy.data.objects.remove(ob)
@@ -1902,11 +1857,11 @@ def apply_view(sc, C, view):
         setup_world(sc, v['sun_el'], strength=SKY_STRENGTH, sun_energy=SUN_ENERGY)
         sc.view_settings.exposure = 0.0
         eye = 9.0              # paras mata dinaikkan (~3.2 m dari rumput) seperti imej pengguna
-        camera(sc, 'kamera', (-5.0, -54.0, eye), (21.5, 10.0, eye), lens=26.0, shift=(0.0, 0.03), level=True)
+        camera(sc, 'kamera', (-4.0, -40.0, eye), (22.5, 0.0, eye), lens=24.0, shift=(0.0, 0.02), level=True)
     else:
         setup_world(sc, v['sun_el'], strength=SKY_STRENGTH, sun_energy=SUN_ENERGY)
         sc.view_settings.exposure = 0.0
-        camera(sc, 'kamera', (-40.0, -62.0, 50.0), (20.0, 12.0, 4.0), lens=30.0)
+        camera(sc, 'kamera', (-30.0, -50.0, 50.0), (20.0, 12.0, 4.0), lens=34.0)
 
 
 def main():
@@ -1919,16 +1874,13 @@ def main():
     ap.add_argument('--out', default=os.path.dirname(HERE))
     ap.add_argument('--suffix', default='')
     ap.add_argument('--blend', default=None, help='simpan fail .blend (nyahpepijat)')
-    ap.add_argument('--no-grass', action='store_true', help='tanpa rumput rambut')
     a = ap.parse_args(argv)
-    global NO_GRASS
-    NO_GRASS = a.no_grass
     addon_utils.enable('cycles', default_set=True)
     t0 = time.time()
     sc, C = build_scene()
     print('scene built in %.1fs, objects=%d' % (time.time() - t0, len(bpy.data.objects)))
-    width = a.width or (900 if a.quick else 2100)
-    samples = a.samples or (24 if a.quick else 96)
+    width = a.width or (900 if a.quick else 2000)
+    samples = a.samples or (24 if a.quick else 64)
     setup_render(sc, width, samples, a.quick)
     views = ['luar', 'pelan', 'udara'] if a.view == 'all' else [a.view]
     for v in views:
