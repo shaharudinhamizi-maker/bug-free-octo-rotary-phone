@@ -10,6 +10,6 @@ Rujukan tetap untuk amalan, kitab dan kerja cetak. Teks kitab disalin verbatim d
 
 Booklet daripada rekod ini: `booklet/Hizib_Qhaf_10_-_Booklet_Cetak_A4.pdf` (cetak, A4 landscape, 2 muka sebelah-menyebelah) dan `booklet/Hizib_Qhaf_10_-_Bacaan_Landscape.pdf` (bacaan skrin).
 
-Ilustrasi Doa Nadi 10: `ilustrasi/Doa_Nadi_10_-_Ilustrasi.pdf` (A5, vektor) dan `.png`. Bunga 10 kelopak: pusat ("raja kamu pada pusat") dan 10 perkara yang disebut dalam doa (urat, tulang, daging, darah, sendi, seni, angin, kulit, bulu, roma). Reka bentuk penyusun, bukan daripada buku sumber; tiada gambar makhluk.
+Ilustrasi Doa Nadi 10: `ilustrasi/Doa_Nadi_10_-_Ilustrasi.pdf` (A5, vektor) dan `.png`. Latar malam hijau berbintang; pusat bercahaya ("raja kamu pada pusat") disambung garis cahaya kepada 10 medalion bersimbol bagi 10 perkara dalam doa: urat (pokok urat bercabang), tulang (ruas tulang belakang), daging (serat otot), darah (titisan), sendi (bola sendi), seni (jaringan halus), angin (alur berpusar), kulit (lapisan berliang), bulu (pelepah bulu), roma (bulu roma tegak). Teks doa penuh (basmalah, doa, kalimah dengan maksud) dalam panel bawah. Simbol ialah tafsiran visual penyusun, bukan daripada buku sumber; tiada gambar makhluk.
 
 Berkaitan: booklet `booklet/Yasiin_Mustajab_-_Bacaan_Melintang.pdf` menggunakan adab yang sama (m/s 136-138) dalam bentuk suntingan.
