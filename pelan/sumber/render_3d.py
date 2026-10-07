@@ -1,12 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Render 3D rumah dua tingkat (Blender Cycles, modul bpy) daripada geometri.py.
+Render 3D rumah setingkat (Blender Cycles, modul bpy) daripada geometri.py.
+
+Reka bentuk ikut model 3D pengguna: dinding putih ~10.5', bumbung pelana 45 darjah
+(perabung U-S pada X=22.5, zink beralur merah), gable papan kayu dengan tingkap kecil,
+bumbung veranda balut tiga sisi (hadapan, zon dapur barat, jalur timur) atas tiang kayu,
+skrin bilah kayu di barat dapur, dinding bata merah ceruk dobi, lantai terakota,
+jalur kerikil anjung. Tangga U naik ke loteng dalam bumbung.
 
 Guna:
   python render_3d.py [--view luar|pelan|udara|all] [--quick] [--samples N]
-                      [--width W] [--out DIR] [--blend FILE]
+                      [--width W] [--out DIR] [--suffix S] [--blend FILE]
+  (lalai: 2000 px, 64 sampel + OIDN; --quick: 900 px, 24 sampel)
 
-  luar  -> Render_3D_Luar.jpg   (paras mata, 3/4 hadapan kanan)
+  luar  -> Render_3D_Luar.jpg   (paras mata dinaikkan ~3.2 m, hadapan-kiri)
   pelan -> Render_3D_Pelan.jpg  (pelan 3D 'dollhouse' tingkat bawah)
   udara -> Render_3D_Udara.jpg  (pandangan udara 3/4 hadapan kiri)
 
@@ -402,34 +409,6 @@ def mat_tile(name, col, mortar, w, h, rough, var=0.07, offset=0.0, plane='xy', g
     return t.done(t.principled(col_out, rough, 0.0, nrm, spec), col)
 
 
-def mat_roof(name, col):
-    """Genting konkrit: UV (u sepanjang cucur, v naik cerun) dalam meter."""
-    t = NT(name)
-    uv = t.uv()
-    br = t.n('ShaderNodeTexBrick', offset=0.5, offset_frequency=2, squash=1.0, squash_frequency=2)
-    t.link(uv, br.inputs['Vector'])
-    t.set(br, 'Color1', scl(col, 0.8))
-    t.set(br, 'Color2', scl(col, 1.25))
-    t.set(br, 'Mortar', scl(col, 0.4))
-    t.set(br, 'Scale', 1.0)
-    t.set(br, 'Mortar Size', 0.004)
-    t.set(br, 'Mortar Smooth', 0.3)
-    t.set(br, 'Bias', 0.0)
-    t.set(br, 'Brick Width', 0.42)
-    t.set(br, 'Row Height', 0.32)
-    o = t.xyz(uv)
-    # tangga tindihan genting (gigi gergaji) + profil gelombang melintang
-    saw = t.math('FRACT', t.math('DIVIDE', o[1], 0.32))
-    wave = t.math('SINE', t.math('MULTIPLY', o[0], 2 * math.pi / 0.21))
-    h = t.math('ADD', t.math('MULTIPLY', t.math('SUBTRACT', 1.0, saw), 0.7), t.math('MULTIPLY', wave, 0.25))
-    h = t.math('SUBTRACT', h, t.math('MULTIPLY', br.outputs['Fac'], 0.6))
-    nrm = t.bump(h, 0.55, 0.012)
-    dirt = t.noise(t.obj(), 0.8, 4.0)
-    base = t.mix(br.outputs['Color'], scl(col, 1.3), t.math('MULTIPLY', dirt, 0.5))
-    rough = t.math('ADD', 0.45, t.math('MULTIPLY', dirt, 0.25))
-    return t.done(t.principled(base, rough, 0.0, nrm, 0.5), col)
-
-
 def mat_lawn(name):
     t = NT(name)
     o = t.obj()
@@ -482,21 +461,6 @@ def mat_glass(name, tint=(0.80, 0.90, 0.93)):
     return t.done(ms.outputs[0], (0.6, 0.75, 0.8))
 
 
-def mat_curtain(name, col=(0.92, 0.90, 0.86)):
-    t = NT(name)
-    o = t.xyz(t.obj())
-    folds = t.math('SINE', t.math('MULTIPLY', t.math('ADD', o[0], o[1]), 40.0))
-    nrm = t.bump(folds, 0.6, 0.01)
-    d = t.principled(col, 0.9, 0.0, nrm, 0.2)
-    tr = t.n('ShaderNodeBsdfTranslucent')
-    t.set(tr, 'Color', col)
-    ms = t.n('ShaderNodeMixShader')
-    ms.inputs[0].default_value = 0.45
-    t.link(d, ms.inputs[1])
-    t.link(tr.outputs[0], ms.inputs[2])
-    return t.done(ms.outputs[0], col)
-
-
 def mat_gravel(name):
     t = NT(name)
     o = t.obj()
@@ -543,16 +507,9 @@ def make_materials():
     M['paver'] = mat_plain('turap', (0.55, 0.53, 0.49), 0.75, var=0.08, vscale=2.0, bump=0.3, bscale=30)
     M['lawn'] = mat_lawn('rumput')
     M['soil'] = mat_plain('tanah', (0.10, 0.07, 0.045), 0.95, var=0.2, bump=0.6, bscale=20)
-    M['roof'] = mat_roof('genting', (0.07, 0.075, 0.08))
-    M['roof_cap'] = mat_plain('genting_perabung', (0.06, 0.063, 0.068), 0.5)
-    M['fascia'] = mat_plain('papan_cucur', (0.86, 0.86, 0.85), 0.5)
     M['soffit'] = mat_plain('siling', (0.82, 0.82, 0.80), 0.85)
     M['alu'] = mat_plain('aluminium', (0.045, 0.047, 0.05), 0.38, metal=0.7)
     M['glass'] = mat_glass('kaca')
-    M['clad'] = mat_tile('kayu_dinding', (0.46, 0.25, 0.11), (0.06, 0.035, 0.02), 2.4, 0.11, 0.55, var=0.15,
-                         plane='vt', offset=0.5, gap=0.006, grain=0.35, grain_scale=(1.5, 30.0), bump=0.8)
-    M['door_main'] = mat_tile('pintu_utama', (0.13, 0.065, 0.03), (0.04, 0.02, 0.01), 3.0, 0.16, 0.45,
-                              var=0.1, plane='vt', gap=0.004, grain=0.4, bump=0.6)
     M['door_int'] = mat_tile('pintu_dalam', (0.62, 0.48, 0.33), (0.5, 0.4, 0.3), 3.0, 1.0, 0.45, var=0.04,
                              plane='vt', gap=0.0, grain=0.35, bump=0.0)
     M['steel'] = mat_plain('keluli', (0.75, 0.75, 0.74), 0.25, metal=1.0)
@@ -581,7 +538,6 @@ def make_materials():
     M['palm_trunk'] = mat_plain('batang_palma', (0.32, 0.29, 0.24), 0.9, var=0.15, vscale=8, bump=0.6, bscale=12)
     M['pot_terra'] = mat_plain('pasu_tanah', (0.45, 0.22, 0.12), 0.8, var=0.05)
     M['pot_dark'] = mat_plain('pasu_gelap', (0.09, 0.09, 0.09), 0.6, var=0.05)
-    M['curtain'] = mat_curtain('langsir')
     M['mirror'] = mat_plain('cermin', (0.9, 0.9, 0.9), 0.02, metal=1.0)
     M['brass'] = mat_plain('loyang', (0.75, 0.55, 0.28), 0.3, metal=1.0)
     M['shade'] = mat_emit('lampu', (1.0, 0.82, 0.6), 3.0)
@@ -1603,8 +1559,8 @@ def build_landscape(C, M):
         if kind == 'shrub':
             z0 = 0.9 if (x < 4.5 and y < 4.5) else Z_LAWN
             shrub(bl, x, y, r, z0, rng, M['leaf2'])
-        elif kind == 'palm':
-            palm(b, bl, x, y, 15.0, rng, M)
+        elif kind == 'palm':     # palma tinggi: sembunyi dalam pelan 3D (menutup bilik)
+            palm(mb('palma_batang', C['full']), mb('palma_daun', C['full']), x, y, 15.0, rng, M)
         elif kind == 'pot':
             pot_plant(b, bl, x, y, r, 0.0 if y > 0 else Z_GRAVEL, kind, rng, M)
         elif kind == 'bigpot':
@@ -1848,9 +1804,9 @@ def apply_view(sc, C, view):
             bpy.data.objects.remove(ob)
     if pelan:
         setup_world(sc, v['sun_el'], strength=SKY_STRENGTH, sun_energy=SUN_ENERGY)
-        sc.view_settings.exposure = 0.0
-        tgt = (20.5, 11.0, 0.0)
-        el, dist = math.radians(58), 72.0
+        sc.view_settings.exposure = -0.15
+        tgt = (20.5, 12.0, 0.0)
+        el, dist = math.radians(58), 78.0
         loc = (tgt[0], tgt[1] - dist * math.cos(el), tgt[2] + dist * math.sin(el))
         camera(sc, 'kamera', loc, tgt, lens=40.0)
     elif view == 'luar':
@@ -1861,7 +1817,7 @@ def apply_view(sc, C, view):
     else:
         setup_world(sc, v['sun_el'], strength=SKY_STRENGTH, sun_energy=SUN_ENERGY)
         sc.view_settings.exposure = 0.0
-        camera(sc, 'kamera', (-30.0, -50.0, 50.0), (20.0, 12.0, 4.0), lens=34.0)
+        camera(sc, 'kamera', (-28.0, -48.0, 42.0), (21.0, 13.0, 6.0), lens=32.0)
 
 
 def main():
