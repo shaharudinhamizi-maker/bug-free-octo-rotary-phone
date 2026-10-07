@@ -8,6 +8,6 @@ Rujukan tetap untuk amalan, kitab dan kerja cetak. Teks kitab disalin verbatim d
 | `data/amalan_hizib_qhaf_10.json` | Kandungan yang sama dalam bentuk data, untuk menjana booklet. |
 | `gambar/` | Gambar asal halaman kitab yang tersimpan (*Pemuda Tauhid* m/s 136-139 dan 217-221). |
 
-Booklet daripada rekod ini: `booklet/Hizib_Qhaf_10_-_Bacaan_A5.pdf` dan `booklet/Hizib_Qhaf_10_-_Booklet_Cetak_A4.pdf`.
+Booklet daripada rekod ini: `booklet/Hizib_Qhaf_10_-_Booklet_Cetak_A4.pdf` (cetak, A4 landscape, 2 muka sebelah-menyebelah) dan `booklet/Hizib_Qhaf_10_-_Bacaan_Landscape.pdf` (bacaan skrin).
 
 Berkaitan: booklet `booklet/Yasiin_Mustajab_-_Bacaan_Melintang.pdf` menggunakan adab yang sama (m/s 136-138) dalam bentuk suntingan.
