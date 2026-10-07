@@ -18,7 +18,7 @@ W, H, S = 1080, 1350, 2  # kanvas asas, dirender pada skala S
 
 # Subjek: fail, skala, kedudukan kiri-atas pada kanvas asas, dan julat
 # pudar (y mula, y tamat) ke gelap di bawah.
-SUBJECT = dict(file="subjek.png", scale=1.10, pos=(-56, 240), fade=(690, 900))
+SUBJECT = dict(file="subjek.png", scale=1.22, pos=(-143, 262), fade=(780, 965))
 
 GOLD_TOP = (255, 236, 190)
 GOLD_MID = (232, 170, 82)
@@ -127,7 +127,8 @@ def subject_layer():
     yy = np.arange(H * S, dtype=np.float32)[:, None] / S
     f0, f1 = SUBJECT["fade"]
     a = a * (1 - smoothstep(f0, f1, yy))
-    a = cv2.erode(a, np.ones((3, 3), np.uint8))  # buang halo tepi
+    a = cv2.erode(a, np.ones((4 * S, 4 * S), np.uint8))  # buang halo tepi
+    a = cv2.GaussianBlur(a, (0, 0), 0.8 * S)
     return rgb, a
 
 
@@ -158,12 +159,18 @@ def main():
         np.exp(-np.abs(xx - sun[0]) / 300)
     bg = screen(bg, streak[..., None] * 0.8, np.array([1.0, 0.85, 0.65], np.float32))
 
+    # latar di bawah ufuk batu ditutup sepenuhnya (buang sisa teks lama)
+    bg = bg * (1 - smoothstep(760, 880, yy))[..., None]
+
+    # huruf AI gergasi di langit, di belakang subjek
+    bg = giant_ai(bg)
+
     # subjek dengan cahaya pinggir (rim light) hangat dari arah matahari
     srgb, sa = subject_layer()
     srgb = grade(srgb)
     edge = np.clip(sa - cv2.GaussianBlur(sa, (0, 0), 6 * S), 0, 1)
     side = 1 - smoothstep(380, 760, xx)  # sisi kiri lebih terang
-    rim = (edge * (0.35 + 0.65 * side) * 2.2)[..., None]
+    rim = (edge * (0.25 + 0.75 * side) * 1.4)[..., None]
     srgb = screen(srgb, np.clip(rim, 0, 1), np.array([1.0, 0.7, 0.35], np.float32))
     # bayang lembut di belakang subjek supaya tidak "terpampang"
     shadow = cv2.GaussianBlur(sa, (0, 0), 28 * S)[..., None]
@@ -171,8 +178,8 @@ def main():
     img = img * (1 - sa[..., None]) + srgb * sa[..., None]
 
     # gelap di atas (ruang tagline) dan bawah (ruang judul)
-    top = (1 - smoothstep(0, 260, yy)) * 0.78
-    bot = smoothstep(620, 900, yy)
+    top = (1 - smoothstep(0, 300, yy)) * 0.85
+    bot = smoothstep(700, 975, yy)
     dark = np.array([0.015, 0.03, 0.045], np.float32)
     img = img * (1 - top[..., None]) + dark * top[..., None]
     img = img * (1 - bot[..., None]) + dark * bot[..., None]
@@ -202,90 +209,88 @@ def main():
 
 # ---------------------------------------------------------------- tipografi
 
+def metal(base, items, y0, y1, stops, glow_col=None, glow_r=0, glow_k=0.0,
+          opacity=1.0, fade=None):
+    """Isi teks dengan kecerunan logam menegak + glow. Pulangkan base baharu."""
+    size = (base.shape[1], base.shape[0])
+    m = text_mask(size, items)
+    a = np.asarray(m, np.float32)[..., None] / 255 * opacity
+    if fade is not None:  # pudar bahagian bawah huruf ke dalam kabus
+        yy = np.arange(base.shape[0], dtype=np.float32)[:, None, None] / S
+        a = a * (1 - smoothstep(fade[0], fade[1], yy) * fade[2])
+    grad = vgrad(int((y1 - y0) * S), stops) / 255
+    col = np.empty_like(base)
+    i0 = int(y0 * S)
+    col[:i0] = grad[0]
+    col[i0:i0 + len(grad)] = grad[:, None, :]
+    col[i0 + len(grad):] = grad[-1]
+    if glow_col is not None:
+        ga, gc = glow(m, glow_r, glow_col, glow_k)
+        base = screen(base, ga, gc)
+    return base * (1 - a) + col * a
+
+
+GOLD = [(0, GOLD_TOP), (0.45, (255, 210, 130)), (0.52, GOLD_MID),
+        (0.8, (190, 112, 40)), (1, GOLD_LOW)]
+SILVER = [(0, (255, 255, 255)), (0.5, (236, 238, 242)), (0.56, (196, 204, 214)),
+          (1, (150, 160, 175))]
+
+
+def giant_ai(img):
+    """Huruf 'AI' gergasi di belakang subjek."""
+    f = font("Cinzel[wght].ttf", 600, 900)
+    base = img
+    return metal(base, [((215, 830), "A", f, 0), ((878, 830), "I", f, 0)], 400, 830, GOLD,
+                 (255, 120, 30), 40, 0.6, opacity=0.95, fade=(640, 900, 0.9))
+
+
 def typography(canvas):
-    size = canvas.size
     base = np.asarray(canvas, np.float32) / 255
-    small = font("Oswald[wght].ttf", 13, 300)
-    star = font("Cinzel[wght].ttf", 30, 500)
-    tag = font("CormorantGaramond[wght].ttf", 30, 500)
 
-    # --- judul: TANJUNG / BIDARA / PUSAT DATA AI
-    title = font("Cinzel[wght].ttf", 186, 700)
-    over = font("Cinzel[wght].ttf", 34, 400)
-    sub = font("Cinzel[wght].ttf", 46, 700)
-
-    # judul emas: topeng -> kecerunan logam -> glow
-    t_mask = text_mask(size, [((540, 1088), "BIDARA", title, 6)])
-    a = np.asarray(t_mask, np.float32)[..., None] / 255
-    g_top, g_bot = 930, 1092
-    grad = vgrad(int((g_bot - g_top) * S), [(0, GOLD_TOP), (0.42, (255, 214, 140)),
-                                             (0.5, GOLD_MID), (0.78, (196, 120, 46)),
-                                             (1, GOLD_LOW)]) / 255
-    col = np.zeros_like(base)
-    col[:] = grad[0]
-    col[int(g_top * S):int(g_top * S) + len(grad)] = grad[:, None, :]
-    col[int(g_top * S) + len(grad):] = grad[-1]
-    ga, gc = glow(t_mask, 22, (255, 140, 40), 0.55)
-    base = screen(base, ga, gc)
-    sh_a = np.asarray(t_mask.filter(ImageFilter.GaussianBlur(3 * S)), np.float32)[..., None] / 255
-    base = base * (1 - 0.6 * sh_a)
-    base = base * (1 - a) + col * a
-
-    # teks lain dilukis terus
+    # judul utama
+    t1 = font("Cinzel[wght].ttf", 108, 800)
+    base = metal(base, [((540, 1162), "PUSAT DATA", t1, 8)], 1082, 1164, SILVER,
+                 (120, 170, 220), 18, 0.25)
+    # KISAH TOK RAUF: besar, TOK RAUF emas bercahaya
+    k1 = font("Cinzel[wght].ttf", 50, 600)
+    k2 = font("Cinzel[wght].ttf", 74, 900)
+    w1 = tracked_width("KISAH", k1, 10) / S
+    w2 = tracked_width("TOK RAUF", k2, 8) / S
+    gap = 30
+    x = 540 - (w1 + gap + w2) / 2
+    base = metal(base, [((x + w1 / 2, 112), "KISAH", k1, 10)], 70, 112, SILVER)
+    base = metal(base, [((x + w1 + gap + w2 / 2, 112), "TOK RAUF", k2, 8)], 56, 114, GOLD,
+                 (255, 130, 30), 16, 0.7)
     canvas = Image.fromarray((np.clip(base, 0, 1) * 255).astype(np.uint8))
     d = ImageDraw.Draw(canvas)
-    draw_tracked(d, (540, 915), "TANJUNG", over, CREAM + (255,), 30)
-    # PUSAT DATA AI dengan garis halus kiri & kanan
-    wsub = draw_tracked(d, (540, 1162), "PUSAT DATA AI", sub, (245, 240, 232), 14)
+
+    # atas: tagline (wording asal)
+    tag = font("CormorantGaramond[wght].ttf", 33, 500)
+    a = "Kabel internet dunia naik ke darat "
+    b = "di pantai ini."
+    wa = tracked_width(a, tag, 1.0) / S
+    wb = tracked_width(b, tag, 1.0) / S
+    x = 540 - (wa + wb) / 2
+    draw_tracked(d, (x, 168), a, tag, CREAM, 1.0, anchor="left")
+    draw_tracked(d, (x + wa, 168), b, tag, (244, 178, 96), 1.0, anchor="left")
+
+    # label kecil di atas judul
+    lab = font("Oswald[wght].ttf", 17, 400)
+    draw_tracked(d, (540, 1050), "TOK RAUF UMUM  ·  DIRANCANG", lab, (232, 180, 110), 7)
+
+    # TANJUNG BIDARA dengan garis emas
+    sub = font("Cinzel[wght].ttf", 38, 600)
+    wsub = draw_tracked(d, (540, 1232), "TANJUNG BIDARA", sub, CREAM, 16)
     for sgn in (-1, 1):
         x0 = 540 + sgn * (wsub / 2 + 22)
-        x1 = 540 + sgn * (wsub / 2 + 120)
-        d.line([(x0 * S, 1146 * S), (x1 * S, 1146 * S)], fill=GOLD_MID, width=int(1.5 * S))
+        x1 = 540 + sgn * (wsub / 2 + 110)
+        d.line([(x0 * S, 1219 * S), (x1 * S, 1219 * S)], fill=GOLD_MID, width=int(1.5 * S))
 
-    # --- atas: "mempersembahkan" + bil. bintang + tagline
-    draw_tracked(d, (540, 44), "MELAKA STREET TALK MEMPERSEMBAHKAN", small, GREY, 5.5)
-    draw_tracked(d, (540, 88), "TOK RAUF", star, CREAM, 16)
-
-    # tagline di ruang langit
-    draw_tracked(d, (540, 156), "Internet dunia naik ke darat di pantai ini.", tag, CREAM, 1.2)
-    draw_tracked(d, (540, 194), "Kini, otaknya pula dirancang di sini.", tag, (240, 190, 120), 1.2)
-
-    # --- blok kredit (billing block) gaya wayang: label kecil, nama besar
-    billing(d)
-
-    # --- tarikh tayangan
-    rel = font("Cinzel[wght].ttf", 26, 700)
-    draw_tracked(d, (540, 1300), "AKAN DATANG", rel, GOLD_MID, 12)
-
-    foot = font("Oswald[wght].ttf", 9.5, 300)
-    draw_tracked(d, (540, 1333),
+    foot = font("Oswald[wght].ttf", 10, 300)
+    draw_tracked(d, (540, 1330),
                  "FOTO: AKUUJANG / WIKIMEDIA COMMONS, CC BY-SA 4.0  ·  POTRET: UMNO ONLINE  ·  "
-                 "SUAR & CAHAYA: GAMBARAN  ·  PUSAT DATA MASIH DIRANCANG",
-                 foot, (110, 116, 126), 1.6)
+                 "PUSAT DATA MASIH DIRANCANG", foot, (105, 112, 122), 1.8)
     return canvas
-
-
-def billing(d):
-    """Blok kredit ala poster wayang: League Gothic sempit, campur saiz."""
-    lab = font("LeagueGothic[wdth].ttf", 15, 75)
-    big = font("LeagueGothic[wdth].ttf", 25, 75)
-    lines = [
-        [("MELAKA STREET TALK", big), ("MEMPERSEMBAHKAN", lab), ("SEBUAH KISAH", lab),
-         ("TOK RAUF", big), ("BERDASARKAN LAPORAN", lab), ("MELAKA HARI INI", big),
-         ("5.10.2026", big)],
-        [("LOKASI", lab), ("MASJID TANAH", big), ("DENGAN", lab), ("KABEL DASAR LAUT", lab),
-         ("SEA-ME-WE 5", big), ("DI", lab), ("PANTAI TANJUNG BIDARA", big)],
-    ]
-    col = (168, 172, 180)
-    for i, line in enumerate(lines):
-        y = 1218 + i * 30
-        gap = 9
-        widths = [tracked_width(t, f, 1.0) / S for t, f in line]
-        total = sum(widths) + gap * (len(line) - 1)
-        x = 540 - total / 2
-        for (t, f), wd in zip(line, widths):
-            draw_tracked(d, (x, y), t, f, col, 1.0, anchor="left")
-            x += wd + gap
 
 
 if __name__ == "__main__":
