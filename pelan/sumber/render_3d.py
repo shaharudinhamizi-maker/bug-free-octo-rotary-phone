@@ -30,14 +30,17 @@ sys.path.insert(0, HERE)
 import geometri as G  # noqa: E402
 
 F = 0.3048                      # kaki -> meter
-H1 = G.H_FLOOR1                 # aras lantai atas (10.5')
-Z_SLAB0 = H1 - 0.5              # bawah papak (10.0')
-Z_TOP = H1 + G.H_FLOOR2         # atas dinding tingkat atas (20.5')
-Z_LAWN, Z_PORCH, Z_STEP = -1.5, -0.5, -1.0
+Z_WALL = 10.5                   # atas dinding putih = aras lantai loteng
+Z_CEIL = 10.0                   # siling tingkat bawah / atas dinding dalam
+H_ATTIC = Z_WALL                # tangga naik ke loteng
+ROOF_EAVE_Z = 11.0              # bumbung pelana pada muka luar dinding barat/timur
+RIDGE_X = 22.5                  # perabung utara-selatan (~23.5')
+MAIN_SIDE_OV, MAIN_RAKE_OV = 0.3, 1.0
+VER_Z_WALL, VER_DROP = 10.5, 2.0   # bumbung veranda: 10.5' di dinding -> 8.5' di tepi luar
+Z_LAWN, Z_GRAVEL = -1.5, -1.25
 CUT = 8.0                       # aras potongan pelan 3D
 CAP = 0.06                      # tebal 'poche' di atas dinding terpotong
-ROOF_PITCH = math.radians(30)
-LEAN_Z0, LEAN_K, LEAN_T = 8.5, 0.15, 0.35   # bumbung sandar: z = Z0 + K*x, tebal T
+POSTS = [(0.2, -5.8), (40.8, -5.8), (0.2, 12.0), (0.2, 29.75), (40.8, 12.0), (40.8, 29.75)]
 
 
 # ===========================================================================
@@ -162,7 +165,7 @@ class MB:
             sm += [False, False]
         self.add(verts, faces, m, sm)
 
-    def blob(self, c, r, m, sub=2, squash=0.85, rough=0.18, seed=0):
+    def blob(self, c, r, m, sub=2, squash=0.85, rough=0.18, seed=0, smooth=True):
         bm = bmesh.new()
         bmesh.ops.create_icosphere(bm, subdivisions=sub, radius=1.0)
         off = Vector((seed * 7.31, seed * 3.17, seed * 5.71))
@@ -173,7 +176,7 @@ class MB:
             verts.append((c[0] + p.x * r * d, c[1] + p.y * r * d, c[2] + p.z * r * d * squash))
         faces = [tuple(v.index for v in f.verts) for f in bm.faces]
         bm.free()
-        self.add(verts, faces, m, True)
+        self.add(verts, faces, m, smooth)
 
     def build(self):
         if not self.f:
@@ -494,6 +497,36 @@ def mat_curtain(name, col=(0.92, 0.90, 0.86)):
     return t.done(ms.outputs[0], col)
 
 
+def mat_gravel(name):
+    t = NT(name)
+    o = t.obj()
+    vor = t.n('ShaderNodeTexVoronoi')
+    t.link(o, vor.inputs['Vector'])
+    vor.inputs['Scale'].default_value = 90.0
+    c = t.mix((0.05, 0.05, 0.05), (0.20, 0.19, 0.18), vor.outputs['Color'])
+    c = t.mix(c, (0.6, 0.6, 0.6), t.math('MULTIPLY', t.noise(o, 1.0, 3.0), 0.5), 'MULTIPLY')
+    nrm = t.bump(vor.outputs['Distance'], 1.0, 0.01, invert=True)
+    return t.done(t.principled(c, 0.8, 0.0, nrm, 0.4), (0.12, 0.12, 0.12))
+
+
+def mat_grass(name):
+    t = NT(name)
+    hi = t.n('ShaderNodeHairInfo')
+    rnd = hi.outputs['Random']
+    c = t.mix((0.028, 0.085, 0.012), (0.085, 0.19, 0.03), rnd)
+    c = t.mix(c, (0.17, 0.19, 0.06), t.math('MULTIPLY', t.math('GREATER_THAN', rnd, 0.88), 0.8))
+    c = t.mix(c, (0.6, 0.7, 0.55), t.math('MULTIPLY', t.noise(t.obj(), 0.4, 3.0), 0.6), 'MULTIPLY')
+    c = t.mix((0.015, 0.04, 0.008), c, t.math('POWER', hi.outputs['Intercept'], 0.5))
+    p = t.principled(c, 0.55, 0.0, None, 0.35)
+    tr = t.n('ShaderNodeBsdfTranslucent')
+    t.set(tr, 'Color', (0.12, 0.25, 0.03))
+    ms = t.n('ShaderNodeMixShader')
+    ms.inputs[0].default_value = 0.3
+    t.link(p, ms.inputs[1])
+    t.link(tr.outputs[0], ms.inputs[2])
+    return t.done(ms.outputs[0], (0.06, 0.15, 0.03))
+
+
 def mat_emit(name, col, strength):
     t = NT(name)
     e = t.n('ShaderNodeEmission')
@@ -562,6 +595,27 @@ def make_materials():
     M['shade'] = mat_emit('lampu', (1.0, 0.82, 0.6), 3.0)
     M['appliance'] = mat_plain('perkakas', (0.90, 0.90, 0.90), 0.3)
     M['book'] = mat_plain('buku', (0.5, 0.35, 0.3), 0.8, var=0.4, vscale=30)
+    # --- reka bentuk pengguna: bumbung zink merah, kayu merah-perang ---
+    M['metal'] = mat_plain('zink_merah', (0.30, 0.042, 0.036), 0.36, metal=0.25, var=0.06, vscale=1.5,
+                           bump=0.05, bscale=20, spec=0.5)
+    M['frame'] = mat_tile('kayu_bingkai', (0.10, 0.026, 0.015), (0.08, 0.02, 0.01), 2.0, 0.6, 0.45, var=0.05,
+                          plane='vt', gap=0.0, grain=0.3, bump=0.0, vscale=0)
+    M['boards'] = mat_tile('papan_gable', (0.19, 0.072, 0.03), (0.035, 0.015, 0.008), 3.0, 0.17, 0.6,
+                           var=0.14, plane='v', offset=0.5, gap=0.008, grain=0.35, grain_scale=(1.0, 30.0),
+                           bump=0.9)
+    M['post'] = mat_tile('kayu_tiang', (0.15, 0.065, 0.028), (0.1, 0.05, 0.02), 3.0, 0.5, 0.55, var=0.06,
+                         plane='vt', gap=0.0, grain=0.4, bump=0.0, vscale=0)
+    M['slat'] = mat_tile('bilah_kayu', (0.40, 0.21, 0.08), (0.3, 0.15, 0.06), 3.0, 0.5, 0.5, var=0.1,
+                         plane='vt', gap=0.0, grain=0.35, bump=0.0, vscale=0)
+    M['terracotta'] = mat_tile('jubin_terakota', (0.50, 0.17, 0.065), (0.33, 0.28, 0.22), 0.3, 0.3, 0.55,
+                               var=0.14, gap=0.004, bump=0.5)
+    M['brick'] = mat_tile('bata_merah', (0.30, 0.075, 0.042), (0.42, 0.40, 0.37), 0.215, 0.075, 0.85,
+                          var=0.25, plane='v', offset=0.5, gap=0.01, bump=1.0)
+    M['gravel'] = mat_gravel('kerikil')
+    M['grass'] = mat_grass('rumput_rambut')
+    M['lamp_glass'] = mat_emit('kaca_tanglung', (1.0, 0.78, 0.5), 4.0)
+    M['yellow'] = mat_plain('pasu_kuning', (0.72, 0.46, 0.02), 0.12, var=0.05, vscale=4,
+                            **{'Coat Weight': 0.6})
     return M
 
 
@@ -627,34 +681,39 @@ def _B(b, horiz, a0, a1, d0, d1, z0, z1, m):
         b.box(d0, d1, a0, a1, z0, z1, m)
 
 
-def build_window(bf, bg, o, M, sill_ledge=True):
+def build_window(bf, bg, o, M, panes=None, transom=None):
+    """Tingkap bingkai kayu merah-perang, kaca jernih, dekat muka luar dinding."""
     x0, x1, y0, y1, _, s, h = o
     horiz = (x1 - x0) >= (y1 - y0)
     a0, a1 = (x0, x1) if horiz else (y0, y1)
     w0, w1 = (y0, y1) if horiz else (x0, x1)
-    c = (w0 + w1) / 2
-    fw, fd = 0.17, 0.22
-    d0, d1 = c - fd / 2, c + fd / 2
-    al = M['alu']
-    _B(bf, horiz, a0, a1, d0, d1, s, s + fw, al)
-    _B(bf, horiz, a0, a1, d0, d1, h - fw, h, al)
-    _B(bf, horiz, a0, a0 + fw, d0, d1, s + fw, h - fw, al)
-    _B(bf, horiz, a1 - fw, a1, d0, d1, s + fw, h - fw, al)
-    n = max(1, int(round((a1 - a0) / 2.3)))
+    ax, sg = outward(o)
+    fd, fw = 0.3, 0.2
+    if sg < 0:
+        d0 = w0 + 0.06
+        d1 = d0 + fd
+    else:
+        d1 = w1 - 0.06
+        d0 = d1 - fd
+    c = (d0 + d1) / 2
+    tm = M['frame']
+    _B(bf, horiz, a0, a1, d0, d1, s, s + fw, tm)
+    _B(bf, horiz, a0, a1, d0, d1, h - fw, h, tm)
+    _B(bf, horiz, a0, a0 + fw, d0, d1, s + fw, h - fw, tm)
+    _B(bf, horiz, a1 - fw, a1, d0, d1, s + fw, h - fw, tm)
+    n = panes or max(1, int(round((a1 - a0) / 1.6)))
     for i in range(1, n):
         a = a0 + i * (a1 - a0) / n
-        _B(bf, horiz, a - fw * 0.4, a + fw * 0.4, d0 + 0.02, d1 - 0.02, s + fw, h - fw, al)
-    if h - s >= 3.4:
-        zt = s + 0.72 * (h - s)
-        _B(bf, horiz, a0 + fw, a1 - fw, d0 + 0.02, d1 - 0.02, zt - fw * 0.4, zt + fw * 0.4, al)
+        _B(bf, horiz, a - 0.06, a + 0.06, d0 + 0.04, d1 - 0.04, s + fw, h - fw, tm)
+    if transom:
+        zt = s + transom * (h - s)
+        _B(bf, horiz, a0 + fw, a1 - fw, d0 + 0.05, d1 - 0.05, zt - 0.06, zt + 0.06, tm)
     _B(bg, horiz, a0 + fw * 0.5, a1 - fw * 0.5, c - 0.015, c + 0.015, s + fw * 0.5, h - fw * 0.5, M['glass'])
-    if sill_ledge and s > 0.5:
-        ax, sg = outward(o)
-        face = w0 if sg < 0 else w1
-        if sg < 0:
-            _B(bf, horiz, a0 - 0.12, a1 + 0.12, face - 0.2, d0, s - 0.12, s + 0.03, M['fascia'])
-        else:
-            _B(bf, horiz, a0 - 0.12, a1 + 0.12, d1, face + 0.2, s - 0.12, s + 0.03, M['fascia'])
+    # ambang luar kayu
+    if sg < 0:
+        _B(bf, horiz, a0 - 0.1, a1 + 0.1, w0 - 0.15, d0, s - 0.1, s + 0.03, tm)
+    else:
+        _B(bf, horiz, a0 - 0.1, a1 + 0.1, d1, w1 + 0.15, s - 0.1, s + 0.03, tm)
 
 
 def leaves_for(o):
@@ -667,20 +726,20 @@ def leaves_for(o):
     return res
 
 
-def build_door(bf, bl, o, M, main=False):
+def build_door(bf, bl, bg, o, M, main=False):
     x0, x1, y0, y1, _, s, h = o
     horiz = (x1 - x0) >= (y1 - y0)
     a0, a1 = (x0, x1) if horiz else (y0, y1)
     w0, w1 = (y0, y1) if horiz else (x0, x1)
     c = (w0 + w1) / 2
-    fw = 0.15
-    fm = M['alu'] if main else M['door_int']
-    _B(bf, horiz, a0, a0 + fw, w0 - 0.03, w1 + 0.03, 0, h, fm)
-    _B(bf, horiz, a1 - fw, a1, w0 - 0.03, w1 + 0.03, 0, h, fm)
+    fw = 0.18
+    fm = M['frame']
+    _B(bf, horiz, a0, a0 + fw, w0 - 0.03, w1 + 0.03, 0, h - fw, fm)
+    _B(bf, horiz, a1 - fw, a1, w0 - 0.03, w1 + 0.03, 0, h - fw, fm)
     _B(bf, horiz, a0, a1, w0 - 0.03, w1 + 0.03, h - fw, h, fm)
-    lm = M['door_main'] if main else M['door_int']
     lt = 0.16 if main else 0.13
-    lc = (0.2 if main else c)
+    lc = 0.25 if main else c
+    ht = h - fw - 0.01
     for hx, hy, ex, ey in leaves_for(o):
         p0, p1 = (hx, ex) if horiz else (hy, ey)
         la, lb = max(min(p0, p1), a0 + fw), min(max(p0, p1), a1 - fw)
@@ -690,81 +749,184 @@ def build_door(bf, bl, o, M, main=False):
                 lb -= 0.01
             else:
                 la += 0.01
-        _B(bl, horiz, la, lb, lc - lt / 2, lc + lt / 2, 0.03, h - fw - 0.01, lm)
-        free = lb - 0.35 if hinge_lo else la + 0.15
+        d0, d1 = lc - lt / 2, lc + lt / 2
         if main:
+            # pintu kayu berpanel kaca (atas) + panel bawah
+            st = 0.33
+            lm = M['frame']
+            _B(bl, horiz, la, la + st, d0, d1, 0.03, ht, lm)
+            _B(bl, horiz, lb - st, lb, d0, d1, 0.03, ht, lm)
+            _B(bl, horiz, la + st, lb - st, d0, d1, 0.03, 0.75, lm)
+            _B(bl, horiz, la + st, lb - st, d0, d1, 2.9, 3.25, lm)
+            _B(bl, horiz, la + st, lb - st, d0, d1, ht - 0.35, ht, lm)
+            _B(bl, horiz, la + st, lb - st, lc - 0.04, lc + 0.04, 0.75, 2.9, M['door_int'])
+            _B(bg, horiz, la + st, lb - st, lc - 0.015, lc + 0.015, 3.25, ht - 0.35, M['glass'])
+            zm = (3.25 + ht - 0.35) / 2
+            _B(bl, horiz, la + st, lb - st, d0 + 0.03, d1 - 0.03, zm - 0.04, zm + 0.04, lm)
             if lb - la > 2:
-                fe = lb - 0.45 if hinge_lo else la + 0.35
-                _B(bl, horiz, fe, fe + 0.1, lc - lt / 2 - 0.25, lc - lt / 2 - 0.17, 2.2, 5.8, M['steel'])
+                am = (la + lb) / 2
+                _B(bl, horiz, am - 0.04, am + 0.04, d0 + 0.035, d1 - 0.035, 3.25, ht - 0.35, lm)
+                fe = lb - 0.5 if hinge_lo else la + 0.4
+                _B(bl, horiz, fe, fe + 0.08, d0 - 0.2, d0 - 0.12, 2.6, 4.6, M['brass'])
+                _B(bl, horiz, fe, fe + 0.08, d0 - 0.12, d0, 2.7, 2.78, M['brass'])
+                _B(bl, horiz, fe, fe + 0.08, d0 - 0.12, d0, 4.42, 4.5, M['brass'])
         else:
+            _B(bl, horiz, la, lb, d0, d1, 0.03, ht, M['door_int'])
+            free = lb - 0.35 if hinge_lo else la + 0.15
             for sg in (-1, 1):
                 dd = lc + sg * (lt / 2 + 0.06)
-                _B(bl, horiz, free, free + 0.2, dd - 0.03, dd + 0.03, 3.3, 3.37, M['steel'])
+                _B(bl, horiz, free, free + 0.2, dd - 0.03, dd + 0.03, 3.3, 3.37, M['brass'])
 
 
 # ===========================================================================
 # Pembinaan bangunan
 # ===========================================================================
-def lean_top(x, y=0.0):
-    return LEAN_Z0 + LEAN_K * x
+# ---------------------------------------------------------------------------
+# Bumbung: fungsi aras permukaan (kaki)
+# ---------------------------------------------------------------------------
+def roof_top(x, y=0.0):
+    """Bumbung pelana utama 45 darjah, perabung U-S pada X=RIDGE_X."""
+    return ROOF_EAVE_Z + (RIDGE_X - abs(x - RIDGE_X)) - (RIDGE_X - 10.0)
 
 
-def lean_bot(x, y=0.0):
-    return lean_top(x) - LEAN_T
+def ver_front(x, y):
+    return VER_Z_WALL + y * (VER_DROP / 6.5)
 
 
-def upper_openings():
-    ops = []
+def ver_west(x, y):
+    return VER_Z_WALL + (x - 10.0) * (VER_DROP / 10.5)
+
+
+def ver_east(x, y):
+    return VER_Z_WALL - (x - 35.0) * (VER_DROP / 6.5)
+
+
+def ver_top(x, y):
+    """Aras atas bumbung veranda (cucur pinggul: minimum satah)."""
+    zs = []
+    if y <= 0:
+        zs.append(ver_front(x, y))
+    if x <= 10:
+        zs.append(ver_west(x, y))
+    if x >= 35:
+        zs.append(ver_east(x, y))
+    return min(zs) if zs else VER_Z_WALL
+
+
+def clip_half(poly, ud, c, sign):
+    """Kekalkan bahagian poligon (xy) dengan sign*(u - c) >= 0, u = p.ud."""
+    out = []
+    n = len(poly)
+    for i in range(n):
+        p, q = poly[i], poly[(i + 1) % n]
+        fp = sign * (p[0] * ud[0] + p[1] * ud[1] - c)
+        fq = sign * (q[0] * ud[0] + q[1] * ud[1] - c)
+        if fp >= 0:
+            out.append(p)
+        if (fp >= 0) != (fq >= 0):
+            t = fp / (fp - fq)
+            out.append((p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])))
+    return out
+
+
+def ribbed(b, region, plane, ud, m, P=0.75, h=0.1):
+    """Kepingan logam trapezoid: rusuk menurun cerun, dijarakkan sepanjang ud."""
+    us = [p[0] * ud[0] + p[1] * ud[1] for p in region]
+    umin, umax = min(us), max(us)
+    prof = []
+    k = math.floor(umin / P)
+    while k * P < umax:
+        for du, hh in ((0.0, 0.0), (0.47, 0.0), (0.55, h), (0.67, h)):
+            prof.append((k * P + du, hh))
+        k += 1
+    prof.append((k * P, 0.0))
+    for (ua, ha), (ub, hb) in zip(prof[:-1], prof[1:]):
+        poly = clip_half(region, ud, ua, 1)
+        poly = clip_half(poly, ud, ub, -1) if len(poly) >= 3 else []
+        if len(poly) < 3:
+            continue
+        verts = []
+        for x, y in poly:
+            t = (x * ud[0] + y * ud[1] - ua) / (ub - ua)
+            verts.append((x, y, plane(x, y) + ha + (hb - ha) * t))
+        b.face(verts, m)
+
+
+def win_sill(o):
+    """Ambang tingkap ikut model pengguna (~2.5')."""
+    return 2.5 if (o[4] == 'win' and abs(o[5] - G.SILL) < 1e-6) else o[5]
+
+
+def ground_openings():
+    res = []
     for o in G.OPENINGS:
-        x0, x1, y0, y1, k = o[:5]
-        front = y1 <= 0.76 and x0 >= 10
-        rear = y0 >= 29.24 and x0 >= 10
-        east = x0 >= 34.24
-        if k == 'win' and (front or rear or east):
-            ops.append((x0, x1, y0, y1, 'win', H1 + G.SILL, H1 + G.HEAD))
-    ops.append((16.75, 21.25, 0.0, 0.75, 'win', H1 + G.SILL, H1 + G.HEAD))
-    return ops
+        if o[1] <= 0.51:          # tingkap dinding barat dapur -> kini skrin kayu
+            continue
+        res.append((o[0], o[1], o[2], o[3], o[4], win_sill(o), o[6]))
+    return res
 
 
 def build_ground(C, M):
     g = mb('tanah_rumput', C['common'])
-    g.face([(-260, -260, Z_LAWN), (300, -260, Z_LAWN), (300, 300, Z_LAWN), (-260, 300, Z_LAWN)], M['lawn'])
+    g.face([(-400, -400, Z_LAWN), (420, -400, Z_LAWN), (420, 420, Z_LAWN), (-400, 420, Z_LAWN)], M['lawn'])
     b = mb('tapak', C['common'])
-    sv, sh = M['stone_v'], M['stone_h']
-    # tapak rumah utama & dapur, anjung, laman berturap, anak tangga
-    b.box(10, 35, 0, 30, Z_LAWN, -0.05, sv)
-    b.box(0, 10, 8, 30, Z_LAWN, -0.05, sv)
-    b.box(0, 10, 0, 8, Z_LAWN, Z_PORCH, sv, mtop=sh)
-    b.box(0, 35, -6, 0, Z_LAWN, Z_PORCH, sv, mtop=sh)
-    b.box(0, 35, -7, -6, Z_LAWN, Z_STEP, sv, mtop=sh)
-    # lantai siap
+    sv = M['stone_v']
+    b.box(10, 35, 0, 30, Z_LAWN, -0.05, sv)               # tapak rumah
+    b.box(0, 10, -6, 30, Z_LAWN, -0.05, sv)               # pelantar dapur & dobi
+    gr = mb('kerikil', C['common'])
+    gr.box(10, 41, -6, 0, Z_LAWN - 0.1, Z_GRAVEL, M['gravel'])       # jalur anjung hadapan
+    gr.box(35, 41, 0, 30.5, Z_LAWN - 0.1, Z_GRAVEL, M['gravel'])     # jalur sisi timur
+    gr.box(16.6, 21.4, -1.6, 0.0, Z_GRAVEL, -0.6, M['stone_v'], mtop=M['stone_h'])   # anak tangga pintu
     f = mb('lantai', C['common'])
     f.box(10, 35, 0, 30, -0.05, 0.0, M['porcelain'])
-    f.box(0, 10, 8, 30, -0.05, 0.0, M['tile_grey'])
+    f.box(0, 10, -6, 30, -0.05, 0.0, M['terracotta'])
     for key, mat in (('tidur', 'oak'), ('almari', 'oak'), ('air', 'tile_grey'), ('stor', 'tile_grey')):
         x0, x1, y0, y1 = G.ROOMS[key]
         f.box(x0, x1, y0, y1, 0.0, 0.02, M[mat])
     # laluan batu pijak ke selatan
     p = mb('laluan', C['common'], bevel=0.04)
-    y = -7.3
+    y = -6.3
     while y > -24:
         p.box(16.5, 21.5, y - 2.0, y, Z_LAWN - 0.1, Z_LAWN + 0.08, M['paver'])
         y -= 2.4
-    # batas tanaman suku bulatan (barat daya)
+    # batas tanaman suku bulatan (barat daya) di atas pelantar
     cx, cy, r = G.PLANTER_SW
     pl = mb('batas_sw', C['common'], bevel=0.03)
-    n = 14
-    rw = 0.35
+    n, rw = 14, 0.35
     for i in range(n):
         a, bb = math.pi / 2 * i / n, math.pi / 2 * (i + 1) / n
-        pts = [(cx + (r - rw) * math.cos(a), cy + (r - rw) * math.sin(a), Z_PORCH),
-               (cx + r * math.cos(a), cy + r * math.sin(a), Z_PORCH),
-               (cx + r * math.cos(bb), cy + r * math.sin(bb), Z_PORCH),
-               (cx + (r - rw) * math.cos(bb), cy + (r - rw) * math.sin(bb), Z_PORCH)]
-        pl.prism(pts, (0, 0, 1.1), M['render'])
-    soil = [(cx, cy, Z_PORCH)] + [(cx + (r - rw) * math.cos(math.pi / 2 * i / 24),
-                                   cy + (r - rw) * math.sin(math.pi / 2 * i / 24), Z_PORCH) for i in range(25)]
-    pl.prism(soil, (0, 0, 0.9), M['render'], mtop=M['soil'])
+        pts = [(cx + (r - rw) * math.cos(a), cy + (r - rw) * math.sin(a), 0.0),
+               (cx + r * math.cos(a), cy + r * math.sin(a), 0.0),
+               (cx + r * math.cos(bb), cy + r * math.sin(bb), 0.0),
+               (cx + (r - rw) * math.cos(bb), cy + (r - rw) * math.sin(bb), 0.0)]
+        pl.prism(pts, (0, 0, 1.1), M['brick'])
+    soil = [(cx, cy, 0.0)] + [(cx + (r - rw) * math.cos(math.pi / 2 * i / 24),
+                               cy + (r - rw) * math.sin(math.pi / 2 * i / 24), 0.0) for i in range(25)]
+    pl.prism(soil, (0, 0, 0.9), M['brick'], mtop=M['soil'])
+
+
+def trimmed_walls():
+    """Pendekkan dinding yang bertindih di sudut (elak muka sesatah bertindih)."""
+    done, out = [], []
+    for x0, x1, y0, y1, k in G.WALLS:
+        horiz = (x1 - x0) >= (y1 - y0)
+        for p in done:
+            ox0, ox1 = max(x0, p[0]), min(x1, p[1])
+            oy0, oy1 = max(y0, p[2]), min(y1, p[3])
+            if ox1 - ox0 > 1e-6 and oy1 - oy0 > 1e-6:
+                if horiz:
+                    if ox0 <= x0 + 1e-6:
+                        x0 = ox1
+                    elif ox1 >= x1 - 1e-6:
+                        x1 = ox0
+                else:
+                    if oy0 <= y0 + 1e-6:
+                        y0 = oy1
+                    elif oy1 >= y1 - 1e-6:
+                        y1 = oy0
+        done.append((x0, x1, y0, y1))
+        out.append((x0, x1, y0, y1, k))
+    return out
 
 
 def build_walls(C, M, cut):
@@ -774,35 +936,55 @@ def build_walls(C, M, cut):
     wi = mb('dinding_dalam_' + tag, coll)
     ws = mb('dinding_dapur_' + tag, coll)
     capm = M['cap'] if cut else None
-    ops_g = list(G.OPENINGS)
-    ops_all = ops_g + ([] if cut else upper_openings())
-    for w in G.WALLS:
-        kind = w[4]
+    ops = ground_openings()
+    for w in trimmed_walls():
+        x0, x1, y0, y1, kind = w
+        wo = openings_in(w, ops)
         if kind == 'ext':
-            z1 = CUT if cut else Z_TOP
-            build_wall(we, w, openings_in(w, ops_all), 0.0, z1, M['render'], cap_mat=capm)
-        elif kind == 'int':
-            z1 = CUT if cut else Z_SLAB0
-            build_wall(wi, w, openings_in(w, ops_g), 0.0, z1, M['paint'], cap_mat=capm)
-        else:
+            side = (y1 - y0) > (x1 - x0)
             if cut:
-                build_wall(ws, w, openings_in(w, ops_g), 0.0, CUT, M['render'], cap_mat=capm)
+                build_wall(we, w, wo, 0.0, CUT, M['render'], cap_mat=capm)
+            elif side:     # dinding barat/timur naik hingga bawah bumbung
+                build_wall(we, w, wo, 0.0, 30.0, M['render'], ztop=lambda x, y: roof_top(x) - 0.45)
             else:
-                build_wall(ws, w, openings_in(w, ops_g), 0.0, 20.0, M['render'], ztop=lean_bot)
+                build_wall(we, w, wo, 0.0, Z_WALL, M['render'])
+        elif kind == 'int':
+            build_wall(wi, w, wo, 0.0, CUT if cut else Z_CEIL, M['paint'], cap_mat=capm)
+        else:
+            if x1 <= 0.51:
+                build_screen(ws, w, M, cut)
+            elif cut:
+                build_wall(ws, w, wo, 0.0, CUT, M['brick'], cap_mat=capm)
+            else:
+                build_wall(ws, w, wo, 0.0, 30.0, M['brick'], ztop=lambda x, y: ver_west(x, y) - 0.06)
     # jubin dinding bilik air (dalam)
     t = mb('jubin_bilik_air_' + tag, coll)
     th = 0.03
     bx0, bx1, by0, by1 = G.ROOMS['air']
     zt = min(7.5, CUT - CAP)
-    for rect in ((bx0, bx0 + th, by0, by1), (bx1 - th, bx1, by0, by1),
+    for rect in ((bx0, bx0 + th, by0 + th, by1 - th), (bx1 - th, bx1, by0 + th, by1 - th),
                  (bx0, bx1, by1 - th, by1), (bx0, bx1, by0, by0 + th)):
-        ops = []
-        for o in G.OPENINGS:
-            if (o[0] <= rect[1] + 0.4 and o[1] >= rect[0] - 0.4 and o[2] <= rect[3] + 0.4 and o[3] >= rect[2] - 0.4
-                    and (o[1] - o[0] < 1 or o[3] - o[2] < 1)):
-                ops.append((max(o[0], rect[0]), min(o[1], rect[1]), max(o[2], rect[2]), min(o[3], rect[3]),
-                            o[4], o[5], o[6]))
-        build_wall(t, rect, [o for o in ops if o[1] > o[0] and o[3] > o[2]], 0.0, zt, M['tile_wall'])
+        tops = []
+        for o in ops:
+            if o[0] <= rect[1] + 0.4 and o[1] >= rect[0] - 0.4 and o[2] <= rect[3] + 0.4 and o[3] >= rect[2] - 0.4:
+                tops.append((max(o[0], rect[0]), min(o[1], rect[1]), max(o[2], rect[2]), min(o[3], rect[3]),
+                             o[4], o[5], o[6]))
+        build_wall(t, rect, [o for o in tops if o[1] > o[0] and o[3] > o[2]], 0.0, zt, M['tile_wall'])
+
+
+def build_screen(b, w, M, cut):
+    """Skrin bilah kayu menegak (dinding barat zon dapur)."""
+    x0, x1, y0, y1 = w[:4]
+    xc = (x0 + x1) / 2
+    top = CUT if cut else 8.05
+    tm = M['post']
+    b.box(xc - 0.18, xc + 0.18, y0, y1, 0.0, 0.3, tm)
+    b.box(xc - 0.15, xc + 0.15, y0, y1, 3.3, 3.5, tm)
+    b.box(xc - 0.18, xc + 0.18, y0, y1, top - 0.25, top, tm)
+    y = y0 + 0.15
+    while y < y1 - 0.2:
+        b.box(xc - 0.09, xc + 0.09, y, y + 0.22, 0.3, top - 0.25, M['slat'])
+        y += 0.55
 
 
 def build_openings(C, M):
@@ -810,130 +992,148 @@ def build_openings(C, M):
     gl = mb('kaca', C['common'])
     df = mb('bingkai_pintu', C['common'])
     dl = mb('daun_pintu', C['common'])
-    for o in G.OPENINGS:
+    for o in ground_openings():
         if o[4] == 'win':
             build_window(fr, gl, o, M)
         else:
-            build_door(df, dl, o, M, main=(o[0] == 16.75 and o[2] == 0.0))
-    fu = mb('bingkai_tingkap_atas', C['full'])
-    gu = mb('kaca_atas', C['full'])
-    cu = mb('langsir_atas', C['full'])
-    for o in upper_openings():
-        build_window(fu, gu, o, M)
-        ax, sg = outward(o)
-        x0, x1, y0, y1, _, s, h = o
-        # langsir nipis di dalam
-        if ax == 'y':
-            yy = y1 + 0.3 if sg < 0 else y0 - 0.3
-            cu.box(x0 - 0.3, x1 + 0.3, yy - 0.02, yy + 0.02, s - 0.4, h + 0.4, M['curtain'])
-        else:
-            xx = x0 - 0.3 if sg > 0 else x1 + 0.3
-            cu.box(xx - 0.02, xx + 0.02, y0 - 0.3, y1 + 0.3, s - 0.4, h + 0.4, M['curtain'])
+            build_door(df, dl, gl, o, M, main=(o[0] == 16.75 and o[2] == 0.0))
+    # lampu tanglung dinding di kiri kanan pintu utama
+    ln = mb('tanglung', C['common'], bevel=0.01)
+    for x in (15.85, 22.15):
+        lantern(ln, x, 0.0, 5.6, M)
 
 
-def build_upper(C, M):
-    """Papak, kanopi, jalur aras lantai, kemasan kayu, siling atas & bumbung."""
+def lantern(b, x, y, z, M):
+    bk = M['black']
+    b.box(x - 0.12, x + 0.12, y - 0.06, y, z + 0.4, z + 1.3, bk)                 # plat dinding
+    b.beam((x, y - 0.05, z + 1.15), (x, y - 0.55, z + 1.15), 0.06, 0.06, bk)     # lengan
+    cy = y - 0.62
+    b.box(x - 0.24, x + 0.24, cy - 0.24, cy + 0.24, z - 0.05, z + 0.05, bk)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            b.box(x + sx * 0.2 - 0.03, x + sx * 0.2 + 0.03, cy + sy * 0.2 - 0.03, cy + sy * 0.2 + 0.03,
+                  z + 0.05, z + 0.85, bk)
+    b.box(x - 0.17, x + 0.17, cy - 0.17, cy + 0.17, z + 0.05, z + 0.85, M['lamp_glass'])
+    b.cyl(x, cy, 0.34, z + 0.85, z + 1.15, bk, seg=4, r1=0.25)
+    b.cyl(x, cy, 0.06, z + 1.15, z + 1.3, bk, seg=8)
+
+
+def gable_part(b, xa, xb, y0, y1, za, top, m):
+    pts = [(xa, za), (xb, za), (xb, top(xb))]
+    if xa < RIDGE_X < xb:
+        pts.append((RIDGE_X, top(RIDGE_X)))
+    pts.append((xa, top(xa)))
+    b.prism([(px, y0, pz) for px, pz in pts], (0, y1 - y0, 0), m)
+
+
+def build_roofs(C, M):
+    """Pelana 45 darjah + veranda balut tiga sisi (semua dalam koleksi 'full')."""
     coll = C['full']
-    s = mb('papak', coll)
-    s.box(10.75, 34.25, 0.75, 29.25, Z_SLAB0, H1, M['soffit'], mtop=M['paint'])
-    # kanopi konkrit julur + fasia nipis
-    s.box(10.2, 34.8, -5.8, 0.0, Z_SLAB0, H1, M['soffit'])
-    s.box(10.0, 35.0, -6.0, -5.8, Z_SLAB0 - 0.25, H1 + 0.15, M['fascia'])
-    s.box(10.0, 10.2, -5.8, 0.0, Z_SLAB0 - 0.25, H1 + 0.15, M['fascia'])
-    s.box(34.8, 35.0, -5.8, 0.0, Z_SLAB0 - 0.25, H1 + 0.15, M['fascia'])
-    # jalur aras lantai di sisi lain
-    s.box(35.0, 35.2, 0.0, 30.2, Z_SLAB0, H1, M['fascia'])
-    s.box(9.8, 35.0, 30.0, 30.2, Z_SLAB0, H1, M['fascia'])
-    s.box(9.8, 10.0, 0.0, 30.0, Z_SLAB0, H1, M['fascia'])
-    # lampu downlight di bawah kanopi
-    for x in (14.0, 19.0, 24.0, 29.0):
-        s.cyl(x, -3.0, 0.22, Z_SLAB0 - 0.02, Z_SLAB0, M['shade'], seg=16)
-    # kemasan kayu pada dinding atas hadapan (bahagian timur)
-    cl = mb('kemasan_kayu', coll)
-    rect = (22.75, 35.0, -0.12, 0.0)
-    ops = [(o[0], o[1], -0.12, 0.0, 'win', o[5], o[6]) for o in upper_openings()
-           if o[3] <= 0.76 and o[0] >= 22.75]
-    build_wall(cl, rect, ops, H1, 20.0, M['clad'])
-    # siling atas / sofit cucur
-    sf = mb('sofit', coll)
-    sf.box(8.12, 36.88, -1.88, 31.88, 20.0, 20.1, M['soffit'])
-    build_hip_roof(C, M)
-    build_lean_to(C, M)
+    # siling / lantai loteng
+    sl = mb('siling', coll)
+    sx0, sx1, sy0, sy1 = G.STAIR
+    hole = (sx0 + 3.0, sx1, sy0 + 2.5, sy1 + 0.4)
+    cx0, cx1, cy0, cy1 = 10.75, 34.25, 0.75, 29.25
+    sl.box(cx0, cx1, cy0, hole[2], Z_CEIL, Z_WALL, M['soffit'], mtop=M['wood'])
+    sl.box(cx0, cx1, hole[3], cy1, Z_CEIL, Z_WALL, M['soffit'], mtop=M['wood'])
+    sl.box(cx0, hole[0], hole[2], hole[3], Z_CEIL, Z_WALL, M['soffit'], mtop=M['wood'])
+    sl.box(hole[1], cx1, hole[2], hole[3], Z_CEIL, Z_WALL, M['soffit'], mtop=M['wood'])
+    # dinding gable papan kayu (hadapan & belakang) dengan tingkap kecil
+    gb = mb('gable', coll)
+    gtop = (lambda x: roof_top(x) - 0.14)
+    wx0, wx1 = RIDGE_X - 1.25, RIDGE_X + 1.25
+    wz0, wz1 = 14.75, 17.25
+    gf = mb('tingkap_gable', coll)
+    gg = mb('kaca_gable', coll)
+    for y0, y1 in ((0.0, 0.75), (29.25, 30.0)):
+        gable_part(gb, 10.0, wx0, y0, y1, Z_WALL, gtop, M['boards'])
+        gable_part(gb, wx1, 35.0, y0, y1, Z_WALL, gtop, M['boards'])
+        gb.box(wx0, wx1, y0, y1, Z_WALL, wz0, M['boards'])
+        gable_part(gb, wx0, wx1, y0, y1, wz1, gtop, M['boards'])
+        build_window(gf, gg, (wx0, wx1, y0, y1, 'win', wz0, wz1), M, panes=2, transom=0.5)
+    # bumbung pelana: kepingan beralur
+    r = mb('bumbung_utama', coll)
+    ex0, ex1 = 10.0 - MAIN_SIDE_OV, 35.0 + MAIN_SIDE_OV
+    ry0, ry1 = -MAIN_RAKE_OV, 30.0 + MAIN_RAKE_OV
+    ribbed(r, [(ex0, ry0), (RIDGE_X, ry0), (RIDGE_X, ry1), (ex0, ry1)], roof_top, (0, 1), M['metal'])
+    ribbed(r, [(RIDGE_X, ry0), (ex1, ry0), (ex1, ry1), (RIDGE_X, ry1)], roof_top, (0, 1), M['metal'])
+    zr = roof_top(RIDGE_X)
+    # perabung (kepingan V terbalik)
+    cap = [(-0.75, -0.75 + 0.14), (0.0, 0.22), (0.75, -0.75 + 0.14), (0.75, -0.75 + 0.1), (0.0, 0.17),
+           (-0.75, -0.75 + 0.1)]
+    r.prism([(RIDGE_X + dx, ry0 - 0.05, zr + dz) for dx, dz in cap], (0, ry1 - ry0 + 0.1, 0), M['metal'])
+    # papan layang (barge) & fasia cucur, gelegar (purlin)
+    tb = mb('kayu_bumbung', coll)
+    for yb in (ry0 + 0.06, ry1 - 0.06):
+        tb.beam((ex0, yb, roof_top(ex0) - 0.33), (RIDGE_X, yb, zr - 0.33), 0.12, 0.6, M['post'])
+        tb.beam((RIDGE_X, yb, zr - 0.33), (ex1, yb, roof_top(ex1) - 0.33), 0.12, 0.6, M['post'])
+    for xf in (ex0 + 0.06, ex1 - 0.06):
+        tb.box(xf - 0.06, xf + 0.06, ry0 + 0.12, ry1 - 0.12, roof_top(xf) - 0.5, roof_top(xf) - 0.04, M['post'])
+    for k in range(5):
+        for side in (-1, 1):
+            xc = RIDGE_X + side * (1.2 + k * 2.5)
+            xl = xc + side * 0.1
+            tb.box(xc - 0.1, xc + 0.1, ry0 + 0.12, ry1 - 0.12, roof_top(xl) - 0.34, roof_top(xl) - 0.03, M['post'])
+    tb.box(RIDGE_X - 0.12, RIDGE_X + 0.12, ry0 + 0.12, ry1 - 0.12, zr - 0.6, zr - 0.05, M['post'])
+    build_veranda(C, M)
 
 
-def build_hip_roof(C, M):
+def build_veranda(C, M):
     coll = C['full']
-    r = mb('bumbung', coll)
-    t = math.tan(ROOF_PITCH)
-    cs = math.cos(ROOF_PITCH)
-    fx0, fx1, fy0, fy1 = 8.0, 37.0, -2.0, 32.0          # garis luar papan cucur
-    fz0, fz1 = 20.0, 20.8
-    ov = 0.15                                           # genting terjulur dari fasia
-    ex0, ex1, ey0, ey1 = fx0 - ov, fx1 + ov, fy0 - ov, fy1 + ov
-    ze = fz1 - ov * t + 0.02
-    hx = (ex1 - ex0) / 2
-    zr = ze + hx * t
-    rx = (ex0 + ex1) / 2
-    ry0, ry1 = ey0 + hx, ey1 - hx
-    A, B_, Cc, D = (ex0, ey0, ze), (ex1, ey0, ze), (ex1, ey1, ze), (ex0, ey1, ze)
-    R0, R1 = (rx, ry0, zr), (rx, ry1, zr)
+    vr = mb('bumbung_veranda', coll)
+    A, B_ = (-0.5, -6.5), (41.5, -6.5)
+    ym = 30.5
+    ribbed(vr, [A, B_, (35.0, 0.0), (10.0, 0.0)], ver_front, (1, 0), M['metal'])
+    ribbed(vr, [A, (10.0, 0.0), (10.0, ym), (-0.5, ym)], ver_west, (0, 1), M['metal'])
+    ribbed(vr, [(35.0, 0.0), B_, (41.5, ym), (35.0, ym)], ver_east, (0, 1), M['metal'])
+    # bubung pinggul & kilat dinding
+    hz = 0.13
+    vr.beam((10.0, 0.0, VER_Z_WALL + hz), (A[0], A[1], ver_front(*A) + hz), 0.7, 0.05, M['metal'])
+    vr.beam((35.0, 0.0, VER_Z_WALL + hz), (B_[0], B_[1], ver_front(*B_) + hz), 0.7, 0.05, M['metal'])
+    vr.box(10.0, 35.0, -0.4, 0.0, VER_Z_WALL + 0.06, VER_Z_WALL + 0.16, M['metal'])
+    vr.box(10.0 - 0.4, 10.0, 0.0, ym, VER_Z_WALL + 0.06, VER_Z_WALL + 0.16, M['metal'])
+    vr.box(35.0, 35.4, 0.0, ym, VER_Z_WALL + 0.06, VER_Z_WALL + 0.16, M['metal'])
+    # kasau (rafter) kayu di bawah kepingan
+    tb = mb('kasau_veranda', coll)
+    rw, rd = 0.17, 0.42
+    off = 0.03 + rd / 2 + 0.02
 
-    def uv_s(p):
-        return ((p[0]) * F, (p[1] - ey0) / cs * F)
+    def rafter(p0, p1, w=rw, d=rd):
+        z0 = ver_top(*p0) - off
+        z1 = ver_top(*p1) - off
+        tb.beam((p0[0], p0[1], z0), (p1[0], p1[1], z1), w, d, M['post'])
 
-    def uv_e(p):
-        return ((p[1]) * F, (ex1 - p[0]) / cs * F)
-
-    def uv_n(p):
-        return ((-p[0]) * F, (ey1 - p[1]) / cs * F)
-
-    def uv_w(p):
-        return ((-p[1]) * F, (p[0] - ex0) / cs * F)
-
-    for pts, fn in (([A, B_, R0], uv_s), ([B_, Cc, R1, R0], uv_e), ([Cc, D, R1], uv_n), ([D, A, R0, R1], uv_w)):
-        r.face(pts, M['roof'], uv=[fn(p) for p in pts])
-    # tepi tebal genting (hidung) di cucur
-    th = 0.12
-    ring = [A, B_, Cc, D]
-    for i in range(4):
-        p, q = ring[i], ring[(i + 1) % 4]
-        r.face([p, (p[0], p[1], p[2] - th), (q[0], q[1], q[2] - th), q][::-1], M['roof_cap'])
-    # perabung & bubung pinggul
-    cap = mb('perabung', coll)
-    for p, q in ((A, R0), (B_, R0), (Cc, R1), (D, R1), (R0, R1)):
-        cap.beam((p[0], p[1], p[2] + 0.12), (q[0], q[1], q[2] + 0.12), 0.75, 0.3, M['roof_cap'])
-    # papan cucur (fasia) putih
-    fa = mb('fasia', coll)
-    w = 0.12
-    fa.box(fx0, fx1, fy0, fy0 + w, fz0, fz1, M['fascia'])
-    fa.box(fx0, fx1, fy1 - w, fy1, fz0, fz1, M['fascia'])
-    fa.box(fx0, fx0 + w, fy0 + w, fy1 - w, fz0, fz1, M['fascia'])
-    fa.box(fx1 - w, fx1, fy0 + w, fy1 - w, fz0, fz1, M['fascia'])
-
-
-def build_lean_to(C, M):
-    coll = C['full']
-    r = mb('bumbung_dapur', coll)
-    x0, x1, y0, y1 = -1.5, 10.0, 6.5, 31.5
-    cs = math.cos(math.atan(LEAN_K))
-    # permukaan atas (UV), bawah, tepi
-    top = [(x0, y0, lean_top(x0)), (x1, y0, lean_top(x1)), (x1, y1, lean_top(x1)), (x0, y1, lean_top(x0))]
-    r.face(top, M['roof'], uv=[(p[1] * F, (p[0] - x0) / cs * F) for p in top])
-    bot = [(p[0], p[1], p[2] - LEAN_T) for p in top][::-1]
-    r.face(bot, M['soffit'])
-    fa = mb('fasia_dapur', coll)
-    fz = 0.45
-    fa.box_slope(x0 - 0.12, x0, y0 - 0.12, y1 + 0.12, lean_top(x0) - fz, lambda x, y: lean_top(x0) + 0.05, M['fascia'])
-    # fasia sisi selatan & utara (jalur condong)
-    for yy0, yy1 in ((y0 - 0.12, y0), (y1, y1 + 0.12)):
-        v = []
-        for (xa, ya) in ((x0, yy0), (x1, yy0), (x1, yy1), (x0, yy1)):
-            v.append((xa, ya, lean_top(xa) - fz))
-        for (xa, ya) in ((x0, yy0), (x1, yy0), (x1, yy1), (x0, yy1)):
-            v.append((xa, ya, lean_top(xa) + 0.05))
-        fa.add(v, [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)], M['fascia'])
-    # kilat (flashing) pada dinding rumah
-    fa.box(10.0 - 0.3, 10.0, y0, y1, lean_top(10.0) - 0.05, lean_top(10.0) + 0.25, M['roof_cap'])
+    x = 12.0
+    while x < 34.0:
+        rafter((x, -0.02), (x, -6.4))
+        x += 2.5
+    for x in (2.5, 5.0, 7.5):
+        rafter((x, (6.5 / 10.5) * (x - 10.0) - 0.15), (x, -6.4))
+    for x in (37.5, 40.0):
+        rafter((x, -(x - 35.0) - 0.15), (x, -6.4))
+    y = 1.5
+    while y < 30.5:
+        rafter((9.98, y), (-0.4, y))
+        rafter((35.02, y), (41.4, y))
+        y += 2.5
+    for y in (-2.5, -5.0):
+        rafter((10.0 + y * (10.5 / 6.5) - 0.15, y), (-0.4, y))
+        rafter((35.0 - y + 0.15, y), (41.4, y))
+    rafter((10.0, 0.0), (A[0] + 0.1, A[1] + 0.1), 0.22, 0.5)
+    rafter((35.0, 0.0), (B_[0] - 0.1, B_[1] + 0.1), 0.22, 0.5)
+    # rasuk tepi (tiada tiang tengah di hadapan)
+    bd = 0.6
+    zf = ver_front(0, POSTS[0][1]) - off - rd / 2 - 0.02
+    zw = ver_west(POSTS[0][0], 0) - off - rd / 2 - 0.02
+    tb.box(-0.35, 41.35, POSTS[0][1] - 0.18, POSTS[0][1] + 0.18, zf - bd, zf, M['post'])
+    tb.box(POSTS[0][0] - 0.18, POSTS[0][0] + 0.18, -6.3, 30.35, zw - bd, zw, M['post'])
+    tb.box(POSTS[1][0] - 0.18, POSTS[1][0] + 0.18, -6.3, 30.35, zf - bd, zf, M['post'])
+    # tiang kayu bulat
+    pc = mb('tiang', C['common'], bevel=0.0)
+    for px, py in POSTS:
+        z0 = 0.0 if px < 10 else Z_GRAVEL
+        pc.cyl(px, py, 0.25, z0, zw - bd + 0.05, M['post'], seg=16)
+        pc.cyl(px, py, 0.32, z0, z0 + 0.25, M['stone_v'], seg=16)
 
 
 def build_stair(C, M, cut):
@@ -944,54 +1144,42 @@ def build_stair(C, M, cut):
     sp = G.STAIR_SPLIT
     ly = G.STAIR_LANDING_Y
     nr = 8
-    zl = H1 / 2
+    zl = H_ATTIC / 2
     rh = zl / nr
     td = (sy1 - ly) / (nr - 1)
     zmax = CUT if cut else 99
 
     def step(xa, xb, ya, yb, ztop):
         z = min(ztop, zmax)
-        clipped = ztop > zmax + 1e-6
-        if clipped:
+        if ztop > zmax + 1e-6:
             st.box(xa, xb, ya, yb, 0.0, z - CAP, M['paint'])
             st.box(xa, xb, ya, yb, z - CAP, z, M['cap'])
         else:
             st.box(xa, xb, ya, yb, 0.0, z - 0.08, M['paint'])
-            st.box(xa, xb, ya - 0.04, yb + 0.04, z - 0.08, z, M['wood'])
+            st.box(xa - 0.01, xb + 0.01, ya - 0.04, yb + 0.04, z - 0.08, z, M['wood'])
 
-    # sayap barat: naik ke selatan
-    for i in range(1, nr):
+    for i in range(1, nr):                       # sayap barat: naik ke selatan
         step(sx0, sp - 0.125, sy1 - i * td, sy1 - (i - 1) * td, i * rh)
-    # pelantar
-    st.box(sx0, sx1, sy0, ly, 0.0, zl - 0.08, M['paint'])
+    st.box(sx0, sx1, sy0, ly, 0.0, zl - 0.08, M['paint'])      # pelantar
     st.box(sx0, sx1, sy0, ly, zl - 0.08, zl, M['wood'])
-    # sayap timur: naik ke utara
-    for k in range(1, nr):
+    for k in range(1, nr):                       # sayap timur: naik ke utara
         step(sp + 0.125, sx1, ly + (k - 1) * td, ly + k * td, zl + k * rh)
-    # dinding tulang tengah
-    wz = CUT if cut else Z_SLAB0
+    wz = CUT if cut else Z_CEIL
     build_wall(st, (sp - 0.125, sp + 0.125, ly, sy1), [], 0.0, wz, M['paint'], cap_mat=M['cap'] if cut else None)
-    # balustrad kaca + pemegang kayu
     gl = mb('balustrad_' + tag, coll)
     rail = 3.0
 
     def panel(pa, pb, axis, const):
-        """pa, pb: (s, z_bawah) titik hujung; axis 'y' -> panel dalam satah YZ pada x=const."""
         poly = [(pa[0], pa[1]), (pb[0], pb[1]), (pb[0], pb[1] + rail), (pa[0], pa[1] + rail)]
         poly = clip_z(poly, zmax)
         if len(poly) < 3:
             return
         th = 0.04
         if axis == 'y':
-            pts = [(const - th / 2, s_, z_) for s_, z_ in poly]
-            gl.prism(pts, (th, 0, 0), M['glass'])
+            gl.prism([(const - th / 2, s_, z_) for s_, z_ in poly], (th, 0, 0), M['glass'])
         else:
-            pts = [(s_, const - th / 2, z_) for s_, z_ in poly]
-            gl.prism(pts, (0, th, 0), M['glass'])
-        # pemegang di atas
-        p0 = (pa[0], pa[1] + rail + 0.08)
-        p1 = (pb[0], pb[1] + rail + 0.08)
-        seg = clip_seg(p0, p1, zmax)
+            gl.prism([(s_, const - th / 2, z_) for s_, z_ in poly], (0, th, 0), M['glass'])
+        seg = clip_seg((pa[0], pa[1] + rail + 0.08), (pb[0], pb[1] + rail + 0.08), zmax)
         if seg:
             q0, q1 = seg
             if axis == 'y':
@@ -1000,7 +1188,7 @@ def build_stair(C, M, cut):
                 gl.beam((q0[0], const, q0[1]), (q1[0], const, q1[1]), 0.18, 0.12, M['wood'])
 
     panel((sy1, rh * 0.5), (ly, zl), 'y', sx0 + 0.05)
-    panel((ly, zl), (sy1, H1), 'y', sx1 - 0.05)
+    panel((ly, zl), (sy1, H_ATTIC), 'y', sx1 - 0.05)
     panel((sx0, zl), (sx1, zl), 'x', sy0 + 0.05)
     panel((sy0, zl), (ly, zl), 'y', sx0 + 0.05)
     panel((sy0, zl), (ly, zl), 'y', sx1 - 0.05)
@@ -1034,7 +1222,7 @@ def build_divider(C, M, cut):
     tag = 'cut' if cut else 'full'
     d = mb('sekatan_kaca_' + tag, C[tag])
     x0, x1, y0, y1 = G.DIVIDER
-    zt = CUT if cut else Z_SLAB0
+    zt = CUT if cut else Z_CEIL
     c = (x0 + x1) / 2
     al = M['alu']
     d.box(x0 + 0.05, x1 - 0.05, y0, y1, 0.0, 0.35, al)
@@ -1054,16 +1242,17 @@ def build_furniture(C, M):
     co = C['common']
     # --- ruang tamu: sofa U ---
     s = mb('sofa', co, bevel=0.12)
-    poly = [(x, y, 0.25) for x, y in G.SOFA_U]
-    s.prism(poly, (0, 0, 0.9), M['sofa'])
-    seat = [(23.6, 1.35), (33.7, 1.35), (33.7, 7.15), (32.1, 7.15), (32.1, 3.15), (25.4, 3.15), (25.4, 7.9),
-            (23.6, 7.9)]
+    base = [(23.65, 1.4), (33.6, 1.4), (33.6, 6.75), (32.0, 6.75), (32.0, 3.25), (25.5, 3.25), (25.5, 7.5),
+            (23.65, 7.5)]
+    s.prism([(x, y, 0.25) for x, y in base], (0, 0, 0.9), M['sofa'])
+    seat = [(23.68, 1.43), (33.57, 1.43), (33.57, 6.72), (32.03, 6.72), (32.03, 3.22), (25.47, 3.22),
+            (25.47, 7.47), (23.68, 7.47)]
     s.prism([(x, y, 1.15) for x, y in seat], (0, 0, 0.33), M['sofa'])
     s.box(23.0, 34.25, 0.75, 1.4, 0.25, 2.62, M['sofa'])
-    s.box(23.0, 23.65, 0.75, 8.0, 0.25, 2.62, M['sofa'])
-    s.box(33.6, 34.25, 0.75, 7.25, 0.25, 2.62, M['sofa'])
-    s.box(23.0, 25.5, 7.5, 8.0, 0.25, 2.0, M['sofa'])
-    s.box(32.0, 34.25, 6.75, 7.25, 0.25, 2.0, M['sofa'])
+    s.box(23.0, 23.65, 1.4, 8.0, 0.25, 2.62, M['sofa'])
+    s.box(33.6, 34.25, 1.4, 7.25, 0.25, 2.62, M['sofa'])
+    s.box(23.65, 25.5, 7.5, 8.0, 0.25, 2.0, M['sofa'])
+    s.box(32.0, 33.6, 6.75, 7.25, 0.25, 2.0, M['sofa'])
     legs = mb('kaki_sofa', co)
     for x, y in ((23.2, 0.95), (34.0, 0.95), (23.2, 7.8), (25.3, 7.8), (32.2, 7.05), (34.0, 7.05), (25.3, 3.1),
                  (32.2, 3.1)):
@@ -1110,7 +1299,7 @@ def build_furniture(C, M):
         chair(ch, cx, cy, ang, M)
     # lampu loket atas meja makan
     pend = mb('lampu_loket', C['full'])
-    pend.cyl(14.0, 4.75, 0.02, 6.4, Z_SLAB0, M['black'], seg=6)
+    pend.cyl(14.0, 4.75, 0.02, 6.4, Z_CEIL, M['black'], seg=6)
     pend.cyl(14.0, 4.75, 0.8, 5.8, 6.4, M['shade'], seg=32, r1=0.3)
     # kabinet laluan
     x0, x1, y0, y1 = G.HALL_CABINET
@@ -1125,10 +1314,7 @@ def build_furniture(C, M):
     bd.box(x0, x1, y0, y1 - 0.35, 0.25, 0.95, M['wood'])
     bd.box(x0 - 0.3, x1 + 0.3, y1 - 0.35, y1, 0.0, 3.6, M['wood'])
     bd.box(x0 + 0.1, x1 - 0.1, y0 + 0.1, y1 - 0.45, 0.95, 1.64, M['linen'])
-    bd.box(x0 + 0.02, x1 - 0.02, y0 + 0.02, y0 + 4.3, 1.62, 1.74, M['duvet'])
-    bd.box(x0 + 0.02, x0 + 0.08, y0 + 0.02, y0 + 4.3, 0.9, 1.62, M['duvet'])
-    bd.box(x1 - 0.08, x1 - 0.02, y0 + 0.02, y0 + 4.3, 0.9, 1.62, M['duvet'])
-    bd.box(x0 + 0.02, x1 - 0.02, y0 + 0.02, y0 + 0.08, 0.9, 1.62, M['duvet'])
+    bd.box(x0 - 0.04, x1 + 0.04, y0 - 0.04, y0 + 4.3, 0.85, 1.74, M['duvet'])
     pw = mb('bantal', co, bevel=0.18)
     pw.box(x0 + 0.4, x0 + 2.6, y1 - 1.9, y1 - 0.55, 1.64, 2.15, M['linen'])
     pw.box(x1 - 2.6, x1 - 0.4, y1 - 1.9, y1 - 0.55, 1.64, 2.15, M['linen'])
@@ -1228,14 +1414,17 @@ def build_kitchen(C, M):
     k = mb('dapur', co, bevel=0.015)
     ctop = 2.95
 
-    def counter(x0, x1, y0, y1, top=None, mtop=None):
-        k.box(x0, x1, y0, y1, 0.0, 0.3, M['black'])
+    def counter(x0, x1, y0, y1, tx0, tx1, ty0, ty1):
+        k.box(x0 + 0.1, x1 - 0.1, y0 + 0.1, y1 - 0.1, 0.0, 0.3, M['black'])
         k.box(x0, x1, y0, y1, 0.3, ctop - 0.12, M['cabinet'])
-        k.box(x0 - 0.05, x1 + 0.05, y0 - 0.05, y1 + 0.05, ctop - 0.12, ctop, mtop or M['quartz'])
+        k.box(tx0, tx1, ty0, ty1, ctop - 0.12, ctop, M['quartz'])
 
-    counter(*G.COUNTER_N[:2], G.COUNTER_N[2], G.COUNTER_N[3] - 0.05)
-    counter(*G.COUNTER_S[:2], G.COUNTER_S[2] + 0.05, G.COUNTER_S[3])
-    counter(G.COUNTER_PEN[0] + 0.05, G.COUNTER_PEN[1], G.COUNTER_PEN[2], G.COUNTER_PEN[3])
+    x0, x1, y0, y1 = G.COUNTER_N
+    counter(x0, x1, y0, y1 - 0.05, x0 - 0.05, x1 + 0.05, y0 - 0.03, y1 - 0.05)
+    x0, x1, y0, y1 = G.COUNTER_S
+    counter(x0, x1, y0 + 0.05, y1, x0 - 0.05, x1 + 0.05, y0, y1 - 0.02)
+    x0, x1, y0, y1 = G.COUNTER_PEN
+    counter(x0 + 0.05, x1, y0, y1, x1 - 3.45 + 0.07, x1 + 0.05, y0 - 0.03, y1 + 0.05)
     # meja bar kayu
     x0, x1, y0, y1 = G.BAR
     k.box(x0, x1 - 0.5, y0 + 0.3, y1 - 0.3, 0.0, ctop - 0.12, M['cabinet'])
@@ -1282,13 +1471,12 @@ def build_kitchen(C, M):
 # Landskap
 # ===========================================================================
 def shrub(b, x, y, r, z0, rng, mat):
-    n = rng.randint(4, 6)
-    for i in range(n):
+    for i in range(rng.randint(2, 3)):
         a = rng.uniform(0, 2 * math.pi)
-        d = rng.uniform(0, 0.45) * r
-        rr = r * rng.uniform(0.5, 0.75)
-        b.blob((x + d * math.cos(a), y + d * math.sin(a), z0 + rr * 0.75 + rng.uniform(0, 0.3) * r), rr, mat,
-               seed=rng.randint(0, 999))
+        d = rng.uniform(0, 0.35) * r
+        rr = r * rng.uniform(0.6, 0.8)
+        c = (x + d * math.cos(a), y + d * math.sin(a), z0 + rr * 0.7)
+        canopy(b, c, rr, rr * 0.8, mat, mat, random.Random(rng.randint(0, 9999)), int(18 + 10 * rr), rr * 0.28)
 
 
 def palm(b, bl, x, y, h, rng, M):
@@ -1321,34 +1509,81 @@ def palm(b, bl, x, y, h, rng, M):
         bl.add(verts, faces, M['leaf3'], True)
 
 
-def tree(b, bl, x, y, h, r, rng, mat_leaf, M, z0=Z_LAWN):
-    tb = Vector((x, y, z0))
-    pts = [tb + Vector((rng.uniform(-0.3, 0.3) * i / 4, rng.uniform(-0.3, 0.3) * i / 4, h * 0.55 * i / 4))
-           for i in range(5)]
-    b.tube(pts, [r * 0.09 * (1 - 0.35 * i / 4) for i in range(5)], M['trunk'], seg=10)
-    top = pts[-1]
-    for k in range(3):
-        az = rng.uniform(0, 2 * math.pi)
-        e = top + Vector((math.cos(az) * r * 0.45, math.sin(az) * r * 0.45, h * 0.18))
-        b.tube([top - Vector((0, 0, h * 0.08)), e], [r * 0.05, r * 0.03], M['trunk'], seg=8)
-    n = rng.randint(7, 11)
+def canopy(bl, c, rx, rz, mat, core_mat, rng, n, cr, sub=1):
+    """Kanopi: teras gelap + banyak gugusan daun kecil di permukaan."""
+    bl.blob(c, rx * 0.8, core_mat, sub=2, squash=rz / rx, rough=0.25, seed=rng.randint(0, 999))
     for i in range(n):
-        az = rng.uniform(0, 2 * math.pi)
-        d = rng.uniform(0.15, 0.6) * r
-        c = Vector((x + d * math.cos(az), y + d * math.sin(az), z0 + h * rng.uniform(0.62, 0.85)))
-        bl.blob(c, r * rng.uniform(0.38, 0.55), mat_leaf, sub=2, squash=0.75, rough=0.25, seed=rng.randint(0, 999))
+        while True:
+            v = Vector((rng.uniform(-1, 1), rng.uniform(-1, 1), rng.uniform(-1, 1)))
+            if 0.2 < v.length <= 1:
+                break
+        v.normalize()
+        if v.z < -0.5 and rng.random() < 0.6:
+            continue
+        t = rng.uniform(0.72, 1.0)
+        p = Vector((c[0] + v.x * rx * t, c[1] + v.y * rx * t, c[2] + v.z * rz * t))
+        bl.blob(p, cr * rng.uniform(0.7, 1.3), mat, sub=sub, squash=0.8, rough=0.35, seed=rng.randint(0, 999),
+                smooth=False)
+
+
+def tree(b, bl, x, y, h, r, rng, mat_leaf, M, z0=Z_LAWN, sub=2, far=False):
+    hc = h - r * 0.75
+    pts = [Vector((x + rng.uniform(-0.25, 0.25) * i / 4 * r * 0.1, y + rng.uniform(-0.25, 0.25) * i / 4 * r * 0.1,
+                   z0 + hc * 0.8 * i / 4)) for i in range(5)]
+    b.tube(pts, [max(0.15, r * 0.075) * (1 - 0.3 * i / 4) for i in range(5)], M['trunk'], seg=10)
+    top = pts[-1]
+    if not far:
+        for k in range(4):
+            az = rng.uniform(0, 2 * math.pi)
+            e = top + Vector((math.cos(az) * r * 0.5, math.sin(az) * r * 0.5, r * 0.45))
+            b.tube([top - Vector((0, 0, hc * 0.12)), e], [max(0.1, r * 0.045), max(0.05, r * 0.02)], M['trunk'],
+                   seg=8)
+    nlobes = 1 if far else rng.randint(3, 5)
+    for k in range(nlobes):
+        if nlobes == 1:
+            c, rr = Vector((x, y, z0 + hc)), r
+        else:
+            az = 2 * math.pi * k / nlobes + rng.uniform(-0.4, 0.4)
+            c = Vector((x + math.cos(az) * r * 0.42, y + math.sin(az) * r * 0.42, z0 + hc + rng.uniform(-0.1, 0.25) * r))
+            rr = r * rng.uniform(0.55, 0.7)
+        n = 45 if far else int(70 * (rr / 5.0) ** 1.6) + 30
+        canopy(bl, c, rr, rr * 0.72, mat_leaf, M['leaf2'], rng, n, rr * (0.3 if far else 0.17))
 
 
 def pot_plant(b, bl, x, y, r, z0, kind, rng, M):
-    if kind == 'pot':
-        b.cyl(x, y, r * 0.75, z0, z0 + r * 2.4, M['pot_dark'], seg=24, r1=1.33)
-        b.cyl(x, y, r * 0.92, z0 + r * 2.2, z0 + r * 2.3, M['soil'], seg=24)
-        zt = z0 + r * 2.3
-        for i in range(9):
-            az = 2 * math.pi * i / 9 + rng.uniform(-0.2, 0.2)
+    if kind in ('pot', 'yellow'):
+        if kind == 'pot':
+            b.cyl(x, y, r * 0.75, z0, z0 + r * 2.4, M['pot_dark'], seg=24, r1=1.33)
+            b.cyl(x, y, r * 0.92, z0 + r * 2.2, z0 + r * 2.3, M['soil'], seg=24)
+            zt, nl, lmin, lmax = z0 + r * 2.3, 9, 2.2, 3.4
+        else:     # pasu seramik kuning berkilat (bujur)
+            prof = [(0.55, 0.0), (0.85, 0.25), (1.0, 0.7), (0.95, 1.2), (0.78, 1.55), (0.8, 1.7)]
+            b.tube([(x, y, z0 + pz * r * 1.4) for _, pz in prof], [pr * r for pr, _ in prof], M['yellow'], seg=28)
+            zt = z0 + 1.7 * r * 1.4 - 0.1
+            b.cyl(x, y, 0.78 * r, zt - 0.02, zt, M['soil'], seg=24)
+            nl, lmin, lmax = 0, 0, 0
+            # pokok tinggi (dracaena): batang + jambak daun
+            for k in range(3):
+                az = 2 * math.pi * k / 3 + 0.4
+                base = Vector((x + 0.15 * math.cos(az), y + 0.15 * math.sin(az), zt))
+                tip = base + Vector((0.6 * math.cos(az), 0.6 * math.sin(az), 3.2 + 0.9 * k))
+                b.tube([base, tip], [0.07, 0.05], M['trunk'], seg=6)
+                for j in range(12):
+                    a2 = rng.uniform(0, 2 * math.pi)
+                    el = rng.uniform(-0.2, 0.9)
+                    L = rng.uniform(1.2, 1.9)
+                    d = Vector((math.cos(a2) * math.cos(el), math.sin(a2) * math.cos(el), math.sin(el)))
+                    side = Vector((-math.sin(a2), math.cos(a2), 0)) * 0.13
+                    p0 = tip + Vector((0, 0, rng.uniform(-0.6, 0.1)))
+                    mid = p0 + d * L * 0.5
+                    end = p0 + d * L + Vector((0, 0, -0.25 * L * (1 - el)))
+                    bl.add([p0 - side * 0.4, p0 + side * 0.4, mid + side, end, mid - side], [(0, 1, 2, 3, 4)],
+                           M['leaf'], True)
+        for i in range(nl):
+            az = 2 * math.pi * i / nl + rng.uniform(-0.2, 0.2)
             rr = rng.uniform(0.0, 0.45) * r
             base = Vector((x + rr * math.cos(az), y + rr * math.sin(az), zt))
-            L = rng.uniform(2.2, 3.4)
+            L = rng.uniform(lmin, lmax)
             tip = base + Vector((math.cos(az) * 0.45, math.sin(az) * 0.45, L))
             side = Vector((-math.sin(az + 1.2), math.cos(az + 1.2), 0)) * 0.22
             mid = base.lerp(tip, 0.45)
@@ -1357,7 +1592,7 @@ def pot_plant(b, bl, x, y, r, z0, kind, rng, M):
     else:      # bigpot: pasu besar + pokok kecil
         b.cyl(x, y, r * 0.8, z0, z0 + 2.0, M['pot_terra'], seg=32, r1=1.25)
         b.cyl(x, y, r * 0.95, z0 + 1.9, z0 + 1.95, M['soil'], seg=32)
-        tree(b, bl, x, y, 6.5, 2.2, rng, M['leaf'], M, z0=z0 + 1.9)
+        tree(b, bl, x, y, 6.5, 2.0, rng, M['leaf'], M, z0=z0 + 1.9)
 
 
 def build_landscape(C, M):
@@ -1367,72 +1602,167 @@ def build_landscape(C, M):
     bl = mb('daun', co)
     for x, y, r, kind in G.PLANTS:
         if kind == 'shrub':
-            z0 = Z_LAWN
-            if x < 4.5 and y < 4.5:
-                z0 = Z_PORCH + 0.9
+            z0 = 0.9 if (x < 4.5 and y < 4.5) else Z_LAWN
             shrub(bl, x, y, r, z0, rng, M['leaf2'])
         elif kind == 'palm':
             palm(b, bl, x, y, 15.0, rng, M)
         elif kind == 'pot':
-            z0 = 0.0 if y > 0 else Z_PORCH
-            pot_plant(b, bl, x, y, r, z0, kind, rng, M)
+            pot_plant(b, bl, x, y, r, 0.0 if y > 0 else Z_GRAVEL, kind, rng, M)
         elif kind == 'bigpot':
-            pot_plant(b, bl, x, y, r, Z_PORCH, kind, rng, M)
-    # pokok tambahan sekitar tapak (jauh dari fasad hadapan)
+            pot_plant(b, bl, x, y, r, 0.0, kind, rng, M)
+    # pasu kuning berkilat di sudut hadapan-kiri rumah (model pengguna)
+    pot_plant(b, bl, 11.0, -1.0, 0.75, Z_GRAVEL, 'yellow', rng, M)
+    # pokok sekitar tapak (sisi & belakang sahaja; hadapan dibiarkan lapang)
     ctx = mb('batang_pokok', C['ctx'])
     cl = mb('daun_pokok', C['ctx'])
-    for x, y, h, r, m in ((50, 36, 26, 11, 'leaf'), (-17, 40, 22, 10, 'leaf2'), (12, 52, 30, 12, 'leaf'),
-                          (36, 56, 24, 10, 'leaf2'), (-20, -14, 15, 6.5, 'leaf3'), (58, 6, 20, 8, 'leaf2')):
+    for x, y, h, r, m in ((-24, 20, 24, 10, 'leaf'), (-20, 46, 28, 11, 'leaf2'), (10, 56, 32, 12, 'leaf'),
+                          (38, 60, 26, 11, 'leaf2'), (62, 34, 24, 10, 'leaf'), (66, 10, 18, 7, 'leaf3'),
+                          (-30, -2, 16, 6.5, 'leaf3')):
         tree(ctx, cl, x, y, h, r, rng, M[m], M)
-    # pagar pokok renek di belakang + jalur pokok jauh (sembunyi ufuk)
-    for x in range(-40, 80, 4):
-        shrub(cl, x + rng.uniform(-1, 1), 66 + rng.uniform(-1, 1), 2.6, Z_LAWN, rng, M['leaf2'])
-    for i in range(70):
-        a = rng.uniform(-0.25 * math.pi, 1.25 * math.pi)
-        d = rng.uniform(95, 150)
-        x, y = 17 + d * math.cos(a), 12 + d * math.sin(a)
-        tree(ctx, cl, x, y, rng.uniform(22, 40), rng.uniform(9, 15), rng, M[rng.choice(['leaf', 'leaf2', 'leaf3'])], M)
-    # pokok renek sisi timur & barat (rendah)
-    for y in (2, 10, 24):
-        shrub(cl, 38.5, y, 1.3, Z_LAWN, rng, M['leaf2'])
-    for y in (12, 20, 27):
-        shrub(cl, -3.0, y, 1.3, Z_LAWN, rng, M['leaf2'])
+    for x in range(-44, 84, 4):
+        shrub(cl, x + rng.uniform(-1, 1), 72 + rng.uniform(-1, 1), 2.8, Z_LAWN, rng, M['leaf2'])
+    for i in range(110):
+        a = rng.uniform(-0.3 * math.pi, 1.3 * math.pi)
+        d = rng.uniform(150, 240)
+        x, y = 20 + d * math.cos(a), 12 + d * math.sin(a)
+        tree(ctx, cl, x, y, rng.uniform(28, 46), rng.uniform(11, 17), rng,
+             M[rng.choice(['leaf', 'leaf2', 'leaf3'])], M, far=True)
+    for y in (6, 16, 26):
+        shrub(cl, 43.5, y, 1.3, Z_LAWN, rng, M['leaf2'])
+    for y in (34, 37):
+        shrub(cl, 3.0, y, 1.3, Z_LAWN, rng, M['leaf2'])
 
 
 # ===========================================================================
 # Pencahayaan, kamera, render
 # ===========================================================================
-SUN_AZ = 215.0          # azimut kompas matahari (dari utara ikut jam) -> barat daya / hadapan-kiri
+SUN_AZ = 222.0          # azimut kompas matahari (dari utara ikut jam) -> barat daya / hadapan-kiri
 
 
-def setup_world(sc, sun_el, strength=1.0, sun_energy=4.0):
+def setup_world(sc, sun_el, strength=1.0, sun_energy=4.0, clouds=True):
     w = bpy.data.worlds.new('langit')
     sc.world = w
     nt = w.node_tree
     for n in list(nt.nodes):
         nt.nodes.remove(n)
-    sky = nt.nodes.new('ShaderNodeTexSky')
+    N, L = nt.nodes, nt.links
+
+    def mth(op, a, b=0.0):
+        m = N.new('ShaderNodeMath')
+        m.operation = op
+        for i, v in enumerate((a, b)):
+            if isinstance(v, bpy.types.NodeSocket):
+                L.new(v, m.inputs[i])
+            else:
+                m.inputs[i].default_value = v
+        return m.outputs[0]
+
+    sky = N.new('ShaderNodeTexSky')
     sky.sky_type = 'MULTIPLE_SCATTERING'
     sky.sun_disc = False
     sky.sun_elevation = math.radians(sun_el)
     sky.sun_rotation = math.radians(SUN_AZ)
     sky.altitude = 50.0
     sky.air_density = 1.0
-    sky.aerosol_density = 1.6
-    bg = nt.nodes.new('ShaderNodeBackground')
-    bg.inputs['Strength'].default_value = strength
-    out = nt.nodes.new('ShaderNodeOutputWorld')
-    nt.links.new(sky.outputs[0], bg.inputs[0])
-    nt.links.new(bg.outputs[0], out.inputs[0])
+    sky.aerosol_density = 0.6
+    col = sky.outputs[0]
+    if clouds:
+        # awan prosedural: unjuran arah pandang ke satah awan
+        tc = N.new('ShaderNodeTexCoord')
+        sp = N.new('ShaderNodeSeparateXYZ')
+        L.new(tc.outputs['Generated'], sp.inputs[0])
+        zc = mth('MAXIMUM', sp.outputs[2], 0.03)
+        cx = mth('DIVIDE', sp.outputs[0], zc)
+        cy = mth('DIVIDE', sp.outputs[1], zc)
+        cb = N.new('ShaderNodeCombineXYZ')
+        L.new(cx, cb.inputs[0])
+        L.new(mth('MULTIPLY', cy, 1.6), cb.inputs[1])
+        nz = N.new('ShaderNodeTexNoise')
+        L.new(cb.outputs[0], nz.inputs['Vector'])
+        nz.inputs['Scale'].default_value = 1.1
+        nz.inputs['Detail'].default_value = 8.0
+        nz.inputs['Roughness'].default_value = 0.6
+        mr = N.new('ShaderNodeMapRange')
+        mr.interpolation_type = 'SMOOTHSTEP'
+        L.new(nz.outputs['Fac'], mr.inputs['Value'])
+        mr.inputs['From Min'].default_value = 0.53
+        mr.inputs['From Max'].default_value = 0.72
+        hz = N.new('ShaderNodeMapRange')
+        hz.interpolation_type = 'SMOOTHSTEP'
+        L.new(sp.outputs[2], hz.inputs['Value'])
+        hz.inputs['From Min'].default_value = 0.03
+        hz.inputs['From Max'].default_value = 0.3
+        mask = mth('MULTIPLY', mr.outputs['Result'], hz.outputs['Result'])
+        mask = mth('MULTIPLY', mask, 0.92)
+        bw = N.new('ShaderNodeRGBToBW')
+        L.new(col, bw.inputs[0])
+        shade = mth('ADD', 0.75, mth('MULTIPLY', nz.outputs['Fac'], 0.9))
+        cval = mth('MULTIPLY', mth('MULTIPLY', bw.outputs[0], 2.3), shade)
+        cc = N.new('ShaderNodeCombineColor')
+        L.new(cval, cc.inputs[0])
+        L.new(cval, cc.inputs[1])
+        L.new(mth('MULTIPLY', cval, 1.03), cc.inputs[2])
+        mx = N.new('ShaderNodeMix')
+        mx.data_type = 'RGBA'
+        L.new(mask, _in(mx, 'Factor_Float'))
+        L.new(col, _in(mx, 'A_Color'))
+        L.new(cc.outputs[0], _in(mx, 'B_Color'))
+        col = _out(mx, 'Result_Color')
+    bg = N.new('ShaderNodeBackground')
+    L.new(col, bg.inputs[0])
+    # langit kelihatan sedikit lebih gelap daripada cahaya yang diberi (kesan penapis polar)
+    lp = N.new('ShaderNodeLightPath')
+    k = mth('ADD', strength, mth('MULTIPLY', lp.outputs['Is Camera Ray'], -0.3 * strength))
+    L.new(k, bg.inputs['Strength'])
+    out = N.new('ShaderNodeOutputWorld')
+    L.new(bg.outputs[0], out.inputs[0])
     ld = bpy.data.lights.new('matahari', 'SUN')
     ld.energy = sun_energy
-    ld.angle = math.radians(1.2)
+    ld.angle = math.radians(1.5)
     ld.color = (1.0, 0.95, 0.88)
     ob = bpy.data.objects.new('matahari', ld)
     sc.collection.objects.link(ob)
     az, el = math.radians(SUN_AZ), math.radians(sun_el)
     d = Vector((math.sin(az) * math.cos(el), math.cos(az) * math.cos(el), math.sin(el)))
     ob.rotation_euler = d.to_track_quat('Z', 'Y').to_euler()
+    return ob
+
+
+def build_grass(C, M, count=40000):
+    """Rumput rambut (partikel) di kawasan hadapan sahaja; bukan di laluan batu."""
+    b = MB('rumput_dekat', C['grass'])
+    yb, yt = -62.0, -6.3
+    for x0, x1 in ((-45.0, 16.3), (21.7, 75.0)):
+        b.face([(x0, yb, Z_LAWN + 0.005), (x1, yb, Z_LAWN + 0.005), (x1, yt, Z_LAWN + 0.005),
+                (x0, yt, Z_LAWN + 0.005)], M['lawn'])
+    for y0, y1, x0, x1 in ((-6.3, 40.0, 41.2, 75.0), (-6.3, 40.0, -45.0, -0.2)):
+        b.face([(x0, y0, Z_LAWN + 0.005), (x1, y0, Z_LAWN + 0.005), (x1, y1, Z_LAWN + 0.005),
+                (x0, y1, Z_LAWN + 0.005)], M['lawn'])
+    ob = b.build()
+    md = ob.modifiers.new('rumput', 'PARTICLE_SYSTEM')
+    ps = md.particle_system.settings
+    ps.type = 'HAIR'
+    ps.count = count
+    ps.hair_length = 0.11
+    ps.emit_from = 'FACE'
+    ps.use_advanced_hair = True
+    ps.normal_factor = 1.0
+    ps.factor_random = 0.45
+    ps.child_type = 'INTERPOLATED'
+    ps.child_percent = 10
+    ps.rendered_child_count = 12
+    ps.child_length = 1.0
+    ps.child_length_threshold = 0.3
+    ps.roughness_1 = 0.03
+    ps.roughness_endpoint = 0.02
+    ps.root_radius = 0.0012
+    ps.tip_radius = 0.0001
+    ps.radius_scale = 1.0
+    ps.display_step = 2
+    ps.render_step = 2
+    ob.data.materials.append(M['grass'])
+    ps.material = len(ob.data.materials)
+    ob.show_instancer_for_render = False
     return ob
 
 
@@ -1452,8 +1782,8 @@ def add_area(coll, name, x, y, z, size, power, color=(1.0, 0.85, 0.68)):
 def build_lights(C):
     for nm, x, y in (('l_tamu', 28.5, 9.0), ('l_makan', 16.5, 8.0), ('l_tidur', 27.0, 23.0),
                      ('l_laluan', 18.0, 21.0), ('l_air', 13.0, 25.0), ('l_dapur', 4.5, 19.0)):
-        z = 8.0 if nm == 'l_dapur' else Z_SLAB0 - 0.1
-        add_area(C['full'], nm, x, y, z, 2.0, 60.0)
+        z = 7.9 if nm == 'l_dapur' else Z_CEIL - 0.1
+        add_area(C['full'], nm, x, y, z, 2.0, 45.0)
 
 
 def camera(sc, name, loc, target=None, lens=30.0, shift=(0.0, 0.0), level=False):
@@ -1478,10 +1808,12 @@ def camera(sc, name, loc, target=None, lens=30.0, shift=(0.0, 0.0), level=False)
 
 
 VIEWS = {
-    'luar': dict(file='Render_3D_Luar.jpg', sun_el=48.0),
-    'pelan': dict(file='Render_3D_Pelan.jpg', sun_el=62.0),
-    'udara': dict(file='Render_3D_Udara.jpg', sun_el=48.0),
+    'luar': dict(file='Render_3D_Luar.jpg', sun_el=46.0),
+    'pelan': dict(file='Render_3D_Pelan.jpg', sun_el=64.0),
+    'udara': dict(file='Render_3D_Udara.jpg', sun_el=46.0),
 }
+SKY_STRENGTH, SUN_ENERGY = 0.45, 4.2
+NO_GRASS = False
 
 
 def build_scene():
@@ -1494,7 +1826,7 @@ def build_scene():
     BUILDERS.clear()
     sc = bpy.context.scene
     C = {}
-    for k in ('common', 'full', 'cut', 'ctx'):
+    for k in ('common', 'full', 'cut', 'ctx', 'grass'):
         c = bpy.data.collections.new(k)
         sc.collection.children.link(c)
         C[k] = c
@@ -1503,7 +1835,7 @@ def build_scene():
     build_walls(C, M, cut=False)
     build_walls(C, M, cut=True)
     build_openings(C, M)
-    build_upper(C, M)
+    build_roofs(C, M)
     build_stair(C, M, cut=False)
     build_stair(C, M, cut=True)
     build_divider(C, M, cut=False)
@@ -1513,6 +1845,7 @@ def build_scene():
     build_lights(C)
     for b in BUILDERS:
         b.build()
+    build_grass(C, M)
     return sc, C
 
 
@@ -1541,6 +1874,10 @@ def setup_render(sc, width, samples, quick):
     sc.render.resolution_percentage = 100
     sc.view_settings.view_transform = 'AgX'
     sc.view_settings.look = 'AgX - Medium High Contrast'
+    try:
+        sc.cycles_curves.shape = 'RIBBONS'
+    except AttributeError:
+        pass
     sc.render.image_settings.file_format = 'JPEG'
     sc.render.image_settings.quality = 92
 
@@ -1550,25 +1887,26 @@ def apply_view(sc, C, view):
     pelan = view == 'pelan'
     C['full'].hide_render = pelan
     C['cut'].hide_render = not pelan
+    C['grass'].hide_render = view != 'luar' or NO_GRASS
     for ob in list(sc.collection.objects):
         if ob.type in ('CAMERA', 'LIGHT'):
             bpy.data.objects.remove(ob)
     if pelan:
-        setup_world(sc, v['sun_el'], strength=1.0, sun_energy=3.2)
-        sc.view_settings.exposure = -0.1
-        tgt = (17.5, 10.5, 0.0)
-        el, dist = math.radians(58), 98.0
+        setup_world(sc, v['sun_el'], strength=SKY_STRENGTH, sun_energy=SUN_ENERGY)
+        sc.view_settings.exposure = 0.0
+        tgt = (20.5, 11.0, 0.0)
+        el, dist = math.radians(58), 72.0
         loc = (tgt[0], tgt[1] - dist * math.cos(el), tgt[2] + dist * math.sin(el))
-        camera(sc, 'kamera', loc, tgt, lens=40.0, shift=(0.0, 0.0))
+        camera(sc, 'kamera', loc, tgt, lens=40.0)
     elif view == 'luar':
-        setup_world(sc, v['sun_el'], strength=1.0, sun_energy=4.0)
-        sc.view_settings.exposure = -0.3
-        camera(sc, 'kamera', (66.0, -58.0, Z_LAWN + 5.25), (14.0, 14.0, Z_LAWN + 5.25), lens=28.0,
-               shift=(0.0, 0.17), level=True)
+        setup_world(sc, v['sun_el'], strength=SKY_STRENGTH, sun_energy=SUN_ENERGY)
+        sc.view_settings.exposure = 0.0
+        eye = 9.0              # paras mata dinaikkan (~3.2 m dari rumput) seperti imej pengguna
+        camera(sc, 'kamera', (-5.0, -54.0, eye), (21.5, 10.0, eye), lens=26.0, shift=(0.0, 0.03), level=True)
     else:
-        setup_world(sc, v['sun_el'], strength=1.0, sun_energy=4.0)
-        sc.view_settings.exposure = -0.3
-        camera(sc, 'kamera', (-38.0, -62.0, 52.0), (19.0, 13.0, 6.0), lens=32.0)
+        setup_world(sc, v['sun_el'], strength=SKY_STRENGTH, sun_energy=SUN_ENERGY)
+        sc.view_settings.exposure = 0.0
+        camera(sc, 'kamera', (-40.0, -62.0, 50.0), (20.0, 12.0, 4.0), lens=30.0)
 
 
 def main():
@@ -1581,13 +1919,16 @@ def main():
     ap.add_argument('--out', default=os.path.dirname(HERE))
     ap.add_argument('--suffix', default='')
     ap.add_argument('--blend', default=None, help='simpan fail .blend (nyahpepijat)')
+    ap.add_argument('--no-grass', action='store_true', help='tanpa rumput rambut')
     a = ap.parse_args(argv)
+    global NO_GRASS
+    NO_GRASS = a.no_grass
     addon_utils.enable('cycles', default_set=True)
     t0 = time.time()
     sc, C = build_scene()
     print('scene built in %.1fs, objects=%d' % (time.time() - t0, len(bpy.data.objects)))
-    width = a.width or (900 if a.quick else 2400)
-    samples = a.samples or (24 if a.quick else 256)
+    width = a.width or (900 if a.quick else 2100)
+    samples = a.samples or (24 if a.quick else 96)
     setup_render(sc, width, samples, a.quick)
     views = ['luar', 'pelan', 'udara'] if a.view == 'all' else [a.view]
     for v in views:
