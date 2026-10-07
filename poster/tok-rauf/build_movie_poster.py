@@ -18,7 +18,12 @@ W, H, S = 1080, 1350, 2  # kanvas asas, dirender pada skala S
 
 # Subjek: fail, skala, kedudukan kiri-atas pada kanvas asas, dan julat
 # pudar (y mula, y tamat) ke gelap di bawah.
-SUBJECT = dict(file="subjek.png", scale=1.22, pos=(-143, 262), fade=(780, 965))
+SUBJECT = dict(file="subjek.png", scale=H / 880, pos=(-100, 300 * H / 880), fade=(1300, 1350))
+
+# latar: adegan pantai (y < BG_CUT pada poster asal) dibesarkan memenuhi
+# kanvas, dipotong dari x = BG_X supaya matahari kekal di kiri
+BG_CUT, BG_X = 880, 100
+BG_K = H / BG_CUT
 
 GOLD_TOP = (255, 236, 190)
 GOLD_MID = (232, 170, 82)
@@ -78,6 +83,13 @@ def vgrad(h, stops):
     return out
 
 
+def drop_shadow(base, mask, radius=6, k=0.75):
+    """Bayang lembut di bawah teks supaya terbaca atas latar terang."""
+    sh = np.asarray(mask.filter(ImageFilter.GaussianBlur(radius * S)), np.float32)
+    sh = np.clip(sh / 255 * 1.6, 0, 1)[..., None]
+    return base * (1 - k * sh)
+
+
 def glow(mask, radius, color, strength):
     g = mask.filter(ImageFilter.GaussianBlur(radius * S))
     a = (np.asarray(g, np.float32) / 255 * strength)[..., None]
@@ -107,7 +119,10 @@ def background():
     mask |= cv2.dilate(om, np.ones((25, 25), np.uint8))
     clean = cv2.inpaint(src, mask, 9, cv2.INPAINT_TELEA)
     img = cv2.cvtColor(clean, cv2.COLOR_BGR2RGB)
-    im = Image.fromarray(img).resize((W * S, H * S), Image.LANCZOS)
+    img = img[:BG_CUT]
+    k = H / BG_CUT
+    im = Image.fromarray(img).resize((int(W * k * S), H * S), Image.LANCZOS)
+    im = im.crop((int(BG_X * S), 0, int(BG_X * S) + W * S, H * S))
     # kedalaman medan: latar lembut sedikit supaya subjek terpisah
     im = im.filter(ImageFilter.GaussianBlur(2.2 * S))
     return np.asarray(im, np.float32) / 255
@@ -136,9 +151,9 @@ def grade(img, lum_w=np.array([0.2126, 0.7152, 0.0722], np.float32)):
     lum = img @ lum_w
     sh = (1 - smoothstep(0.0, 0.6, lum))[..., None]
     hi = smoothstep(0.45, 1.0, lum)[..., None]
-    img = img + sh * np.array([-0.07, 0.015, 0.06]) + hi * np.array([0.06, 0.02, -0.06])
+    img = img + sh * np.array([-0.03, 0.01, 0.04]) + hi * np.array([0.05, 0.02, -0.05])
     img = np.clip(img, 0, 1)
-    img = img + 0.25 * (img - 0.5) * (1 - np.abs(2 * img - 1))
+    img = img + 0.12 * (img - 0.5) * (1 - np.abs(2 * img - 1))
     return np.clip(img, 0, 1).astype(np.float32)
 
 
@@ -150,7 +165,7 @@ def main():
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32) / S
 
     # cahaya matahari & suar anamorfik di ufuk kiri
-    sun = (205, 520)
+    sun = (205 * BG_K - BG_X, 520 * BG_K)
     d = np.hypot(xx - sun[0], (yy - sun[1]) * 1.7)
     bg = screen(bg, np.exp(-(d / 360) ** 2)[..., None] * 0.55,
                 np.array([1.0, 0.62, 0.25], np.float32))
@@ -158,9 +173,6 @@ def main():
     streak = (np.exp(-(dy / 2.2) ** 2) + 0.3 * np.exp(-(dy / 10) ** 2)) * \
         np.exp(-np.abs(xx - sun[0]) / 300)
     bg = screen(bg, streak[..., None] * 0.8, np.array([1.0, 0.85, 0.65], np.float32))
-
-    # latar di bawah ufuk batu ditutup sepenuhnya (buang sisa teks lama)
-    bg = bg * (1 - smoothstep(760, 880, yy))[..., None]
 
     # huruf AI gergasi di langit, di belakang subjek
     bg = giant_ai(bg)
@@ -174,19 +186,12 @@ def main():
     srgb = screen(srgb, np.clip(rim, 0, 1), np.array([1.0, 0.7, 0.35], np.float32))
     # bayang lembut di belakang subjek supaya tidak "terpampang"
     shadow = cv2.GaussianBlur(sa, (0, 0), 28 * S)[..., None]
-    img = bg * (1 - 0.45 * shadow)
+    img = bg * (1 - 0.2 * shadow)
     img = img * (1 - sa[..., None]) + srgb * sa[..., None]
 
-    # gelap di atas (ruang tagline) dan bawah (ruang judul)
-    top = (1 - smoothstep(0, 300, yy)) * 0.85
-    bot = smoothstep(700, 975, yy)
-    dark = np.array([0.015, 0.03, 0.045], np.float32)
-    img = img * (1 - top[..., None]) + dark * top[..., None]
-    img = img * (1 - bot[..., None]) + dark * bot[..., None]
-
-    # vignet
-    v = np.hypot((xx - W / 2) / (W * 0.6), (yy - H * 0.45) / (H * 0.65))
-    img = img * (1 - 0.5 * smoothstep(0.55, 1.3, v))[..., None]
+    # vignet sangat ringan
+    v = np.hypot((xx - W / 2) / (W * 0.6), (yy - H * 0.5) / (H * 0.65))
+    img = img * (1 - 0.15 * smoothstep(0.7, 1.4, v))[..., None]
 
     canvas = Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8))
     img = typography(canvas)
@@ -200,7 +205,7 @@ def main():
     grain = rng.normal(0, 1, (h, w)).astype(np.float32)
     grain = cv2.GaussianBlur(grain, (0, 0), 0.6 * S)
     lum = arr @ np.array([0.2126, 0.7152, 0.0722], np.float32)
-    arr = arr + (grain * (0.05 * (1 - np.abs(2 * lum - 1)) + 0.012))[..., None]
+    arr = arr + (grain * (0.03 * (1 - np.abs(2 * lum - 1)) + 0.008))[..., None]
     out = Image.fromarray((np.clip(arr, 0, 1) * 255 + 0.5).astype(np.uint8))
     out.save(HERE / "Pusat_Data_AI_wayang_2x.jpg", quality=94, subsampling=0)
     out.resize((W, H), Image.LANCZOS).save(HERE / "Pusat_Data_AI_wayang.jpg",
@@ -224,6 +229,7 @@ def metal(base, items, y0, y1, stops, glow_col=None, glow_r=0, glow_k=0.0,
     col[:i0] = grad[0]
     col[i0:i0 + len(grad)] = grad[:, None, :]
     col[i0 + len(grad):] = grad[-1]
+    base = drop_shadow(base, m)
     if glow_col is not None:
         ga, gc = glow(m, glow_r, glow_col, glow_k)
         base = screen(base, ga, gc)
@@ -238,10 +244,9 @@ SILVER = [(0, (255, 255, 255)), (0.5, (236, 238, 242)), (0.56, (196, 204, 214)),
 
 def giant_ai(img):
     """Huruf 'AI' gergasi di belakang subjek."""
-    f = font("Cinzel[wght].ttf", 600, 900)
-    base = img
-    return metal(base, [((215, 830), "A", f, 0), ((878, 830), "I", f, 0)], 400, 830, GOLD,
-                 (255, 120, 30), 40, 0.6, opacity=0.95, fade=(640, 900, 0.9))
+    f = font("Cinzel[wght].ttf", 470, 900)
+    return metal(img, [((275, 735), "AI", f, 10)], 400, 735, GOLD,
+                 (255, 120, 30), 30, 0.45, opacity=0.97)
 
 
 def typography(canvas):
@@ -249,7 +254,7 @@ def typography(canvas):
 
     # judul utama
     t1 = font("Cinzel[wght].ttf", 108, 800)
-    base = metal(base, [((540, 1162), "PUSAT DATA", t1, 8)], 1082, 1164, SILVER,
+    base = metal(base, [((540, 1218), "PUSAT DATA", t1, 8)], 1138, 1220, SILVER,
                  (120, 170, 220), 18, 0.25)
     # KISAH TOK RAUF: besar, TOK RAUF emas bercahaya
     k1 = font("Cinzel[wght].ttf", 50, 600)
@@ -261,11 +266,18 @@ def typography(canvas):
     base = metal(base, [((x + w1 / 2, 112), "KISAH", k1, 10)], 70, 112, SILVER)
     base = metal(base, [((x + w1 + gap + w2 / 2, 112), "TOK RAUF", k2, 8)], 56, 114, GOLD,
                  (255, 130, 30), 16, 0.7)
+    # bayang untuk teks biasa (tagline, label, sari kata, kredit)
+    tag = font("CormorantGaramond[wght].ttf", 33, 500)
+    lab = font("Oswald[wght].ttf", 17, 500)
+    sub = font("Cinzel[wght].ttf", 38, 700)
+    base = drop_shadow(base, text_mask((base.shape[1], base.shape[0]), [
+        ((540, 168), "Kabel internet dunia naik ke darat di pantai ini.", tag, 1.0),
+        ((540, 1106), "TOK RAUF UMUM  ·  DIRANCANG", lab, 7),
+        ((540, 1284), "TANJUNG BIDARA", sub, 16)]), 5, 0.8)
     canvas = Image.fromarray((np.clip(base, 0, 1) * 255).astype(np.uint8))
     d = ImageDraw.Draw(canvas)
 
     # atas: tagline (wording asal)
-    tag = font("CormorantGaramond[wght].ttf", 33, 500)
     a = "Kabel internet dunia naik ke darat "
     b = "di pantai ini."
     wa = tracked_width(a, tag, 1.0) / S
@@ -275,21 +287,19 @@ def typography(canvas):
     draw_tracked(d, (x + wa, 168), b, tag, (244, 178, 96), 1.0, anchor="left")
 
     # label kecil di atas judul
-    lab = font("Oswald[wght].ttf", 17, 400)
-    draw_tracked(d, (540, 1050), "TOK RAUF UMUM  ·  DIRANCANG", lab, (232, 180, 110), 7)
+    draw_tracked(d, (540, 1106), "TOK RAUF UMUM  ·  DIRANCANG", lab, (232, 180, 110), 7)
 
     # TANJUNG BIDARA dengan garis emas
-    sub = font("Cinzel[wght].ttf", 38, 600)
-    wsub = draw_tracked(d, (540, 1232), "TANJUNG BIDARA", sub, CREAM, 16)
+    wsub = draw_tracked(d, (540, 1284), "TANJUNG BIDARA", sub, CREAM, 16)
     for sgn in (-1, 1):
         x0 = 540 + sgn * (wsub / 2 + 22)
         x1 = 540 + sgn * (wsub / 2 + 110)
-        d.line([(x0 * S, 1219 * S), (x1 * S, 1219 * S)], fill=GOLD_MID, width=int(1.5 * S))
+        d.line([(x0 * S, 1271 * S), (x1 * S, 1271 * S)], fill=GOLD_MID, width=int(1.5 * S))
 
-    foot = font("Oswald[wght].ttf", 10, 300)
+    foot = font("Oswald[wght].ttf", 10, 400)
     draw_tracked(d, (540, 1330),
                  "FOTO: AKUUJANG / WIKIMEDIA COMMONS, CC BY-SA 4.0  ·  POTRET: UMNO ONLINE  ·  "
-                 "PUSAT DATA MASIH DIRANCANG", foot, (105, 112, 122), 1.8)
+                 "PUSAT DATA MASIH DIRANCANG", foot, (225, 225, 228), 1.8)
     return canvas
 
 
