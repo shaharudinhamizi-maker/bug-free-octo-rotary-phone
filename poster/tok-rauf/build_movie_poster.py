@@ -1,9 +1,9 @@
 """Bina semula poster 'Pusat Data AI Tanjung Bidara' gaya poster wayang.
 
 Guna: python3 build_movie_poster.py
-Input : Pusat_Data_AI_asal.jpg (latar pantai), subjek_mikrofon.png (potongan
-        subjek RGBA dari potret_mikrofon.jpg), subjek.png (potongan subjek
-        lama, hanya untuk membersihkan latar)
+Input : Pusat_Data_AI_asal.jpg (latar pantai, skala 1:1),
+        subjek_mikrofon.png (potongan RGBA dari potret_mikrofon.jpg),
+        subjek.png (potongan subjek lama, hanya untuk membersihkan latar)
 Output: Pusat_Data_AI_wayang.jpg (1080x1350) + Pusat_Data_AI_wayang_2x.jpg
 
 Wording hanya dari poster asal.
@@ -12,27 +12,28 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 HERE = Path(__file__).parent
 FONTS = HERE / "fonts"
 W, H, S = 1080, 1350, 2  # kanvas asas, dirender pada skala S
 
-# Latar: adegan pantai poster asal dari y=BG_TOP hingga BG_CUT (di bawah
-# teks atas, di atas kotak judul lama), dibesarkan memenuhi kanvas dan
-# dipotong dari x=BG_X supaya matahari kekal di kiri.
-BG_TOP, BG_CUT, BG_X = 150, 880, 210
-BG_K = H / (BG_CUT - BG_TOP)
-
-# Subjek: dibesarkan, tepi bawah gambar = tepi bawah poster.
-SUBJECT = dict(file="subjek_mikrofon.png", scale=1.6, x=36)
+SCENE_END = 880  # pemandangan asal berakhir di sini; bawahnya ruang judul
+# Langit atas (y < SKY_ROWS) diregang ke bawah sebanyak SHIFT piksel supaya
+# pemandangan turun sedikit dan ruang judul di bawah lebih seimbang.
+SKY_ROWS, SHIFT = 200, 50
+# Subjek baharu diletak di tempat subjek lama (dicari supaya menutup
+# hampir seluruh subjek lama). Diterbalikkan supaya menghadap laut/matahari.
+SUBJECT = dict(file="subjek_mikrofon.png", scale=1.5, pos=(-40, 224 + SHIFT), mirror=True)
+SUN = (205, 520 + SHIFT)
+NAVY_TOP, NAVY_BOT = (16, 32, 56), (8, 15, 28)
 
 GOLD_MID = (232, 170, 82)
 CREAM = (246, 240, 228)
-GOLD = [(0, (255, 236, 190)), (0.45, (255, 210, 130)), (0.52, GOLD_MID),
-        (0.8, (190, 112, 40)), (1, (150, 82, 28))]
+GOLD = [(0, (255, 238, 196)), (0.45, (255, 212, 134)), (0.52, GOLD_MID),
+        (0.8, (196, 118, 44)), (1, (160, 88, 30))]
 SILVER = [(0, (255, 255, 255)), (0.5, (238, 240, 244)), (0.56, (200, 208, 218)),
-          (1, (160, 170, 184))]
+          (1, (165, 175, 190))]
 LUM = np.array([0.2126, 0.7152, 0.0722], np.float32)
 
 
@@ -67,11 +68,11 @@ def draw_tracked(draw, xy, text, f, fill, track=0.0, anchor="center"):
 
 
 def text_mask(items):
-    """items: senarai (xy, text, font, track). Pulangkan topeng L."""
+    """items: senarai (xy, text, font, track[, anchor]). Pulangkan topeng L."""
     m = Image.new("L", (W * S, H * S), 0)
     d = ImageDraw.Draw(m)
-    for xy, text, f, track in items:
-        draw_tracked(d, xy, text, f, 255, track)
+    for it in items:
+        draw_tracked(d, it[0], it[1], it[2], 255, it[3], *(it[4:] or ["center"]))
     return m
 
 
@@ -119,9 +120,9 @@ def to_img(arr):
 
 # ---------------------------------------------------------------- latar
 
-def fill_rows(img, mask):
-    """Isi kawasan bertopeng secara mendatar dengan piksel bersih terdekat
-    di kirinya, jadi langit & laut di kiri bersambung ke kanan."""
+def fill_sideways(img, mask, split):
+    """Isi kawasan bertopeng secara mendatar dengan piksel bersih terdekat:
+    dari kiri bagi x < split (laut/langit), dari kanan bagi x >= split."""
     out = img.astype(np.float32).copy()
     for y in np.where(mask.any(1))[0]:
         row = mask[y]
@@ -129,103 +130,143 @@ def fill_rows(img, mask):
         if len(xs) == 0:
             continue
         idx = np.where(row)[0]
-        left = np.searchsorted(xs, idx) - 1
-        src = np.where(left >= 0, xs[np.clip(left, 0, None)], xs[0])
-        out[y, idx] = out[y, src]
+        pos = np.searchsorted(xs, idx)
+        left = xs[np.clip(pos - 1, 0, len(xs) - 1)]
+        right = xs[np.clip(pos, 0, len(xs) - 1)]
+        use_left = ((idx < split) & (pos > 0)) | (pos >= len(xs))
+        out[y, idx] = out[y, np.where(use_left, left, right)]
     return out
 
 
 def background():
     src = cv2.cvtColor(cv2.imread(str(HERE / "Pusat_Data_AI_asal.jpg")), cv2.COLOR_BGR2RGB)
-    # buang subjek lama (potongan asal pada y=300) beserta halonya
+
+    # 1. teks lama di atas: piksel yang jauh lebih terang daripada langit sekitar
+    v = cv2.cvtColor(src, cv2.COLOR_RGB2HSV)[..., 2].astype(np.int16)
+    med = cv2.medianBlur(v.astype(np.uint8), 21).astype(np.int16)
+    band = np.zeros(v.shape, bool)
+    band[30:160, 140:940] = True
+    # teks lama krim/oren (V > 185) lebih terang daripada langit (V < 175);
+    # pelepah kelapa gelap tidak tersentuh
+    rr, bb = src[..., 0].astype(np.int16), src[..., 2].astype(np.int16)
+    tmask = (band & ((v > 185) | ((rr - bb > 50) & (rr > 140)))).astype(np.uint8) * 255
+    tmask = cv2.dilate(tmask, np.ones((5, 5), np.uint8))
+    # titik cahaya "garis data" di atas laut (titik kecil jauh lebih terang)
+    r, b = src[..., 0].astype(np.int16), src[..., 2].astype(np.int16)
+    sea = np.zeros(v.shape, bool)
+    sea[560:SCENE_END, :] = True
+    dots = sea & (v > med + 40) & (b >= r)
+    tmask |= cv2.dilate(dots.astype(np.uint8) * 255, np.ones((9, 9), np.uint8))
+    src = cv2.inpaint(src, tmask, 5, cv2.INPAINT_TELEA)
+
+    # 2. subjek lama: diisi dari sisi (kebanyakannya ditutup subjek baharu)
     old = cv2.imread(str(HERE / "subjek.png"), cv2.IMREAD_UNCHANGED)[..., 3]
-    om = np.zeros(src.shape[:2], np.uint8)
+    om = np.zeros(v.shape, np.uint8)
     om[300:300 + old.shape[0], :old.shape[1]] = (old > 10) * 255
-    om = cv2.dilate(om, np.ones((31, 31), np.uint8)) > 0
-    # seluruh kanan di bawah pelepah juga diganti supaya tiada sempadan
-    om[380:, 175:] = True
-    filled = fill_rows(src, om)
-    soft = cv2.GaussianBlur(filled, (0, 0), 14)
-    m = cv2.GaussianBlur(om.astype(np.float32), (0, 0), 14)[..., None]
+    om = cv2.dilate(om, np.ones((21, 21), np.uint8)) > 0
+    filled = fill_sideways(src, om, split=560)
+    soft = cv2.GaussianBlur(filled, (0, 0), 8)
+    m = cv2.GaussianBlur(om.astype(np.float32), (0, 0), 4)[..., None]
     img = filled * (1 - m) + soft * m
-    img = np.clip(img[BG_TOP:BG_CUT], 0, 255).astype(np.uint8)
-    im = Image.fromarray(img).resize((int(W * BG_K * S), H * S), Image.LANCZOS)
-    im = im.crop((int(BG_X * S), 0, int(BG_X * S) + W * S, H * S))
-    im = im.filter(ImageFilter.GaussianBlur(2.0 * S))  # kedalaman medan
-    return np.asarray(im, np.float32) / 255
+
+    img = np.clip(img, 0, 255).astype(np.uint8)
+    sky = cv2.resize(img[:SKY_ROWS], (img.shape[1], SKY_ROWS + SHIFT),
+                     interpolation=cv2.INTER_CUBIC)
+    img = np.vstack([sky, img[SKY_ROWS:H - SHIFT]])
+    im = Image.fromarray(img).resize((W * S, H * S), Image.LANCZOS)
+    im = im.filter(ImageFilter.GaussianBlur(0.9 * S))  # lembut sedikit, padan subjek
+    arr = np.asarray(im, np.float32) / 255
+
+    # 3. bawah pemandangan: biru laut dalam (bukan hitam) untuk ruang judul
+    yy = np.arange(H * S, dtype=np.float32)[:, None, None] / S
+    navy = np.array(NAVY_TOP, np.float32) / 255 + (
+        np.array(NAVY_BOT, np.float32) - np.array(NAVY_TOP, np.float32)) / 255 * \
+        np.clip((yy - SCENE_END - SHIFT) / (H - SCENE_END - SHIFT), 0, 1)
+    end = SCENE_END + SHIFT
+    t = smoothstep(end - 90, end - 5, yy)
+    return arr * (1 - t) + navy * t
 
 
 def subject_layer():
     sub = Image.open(HERE / SUBJECT["file"]).convert("RGBA")
+    if SUBJECT["mirror"]:
+        sub = ImageOps.mirror(sub)
     k = SUBJECT["scale"] * S
     sub = sub.resize((int(sub.width * k), int(sub.height * k)), Image.LANCZOS)
     layer = Image.new("RGBA", (W * S, H * S))
-    layer.alpha_composite(sub, (int(SUBJECT["x"] * S), H * S - sub.height))
+    px, py = SUBJECT["pos"]
+    layer.alpha_composite(sub, (int(px * S), int(py * S)))
     arr = np.asarray(layer, np.float32) / 255
-    a = cv2.erode(arr[..., 3], np.ones((2 * S, 2 * S), np.uint8))  # buang halo
-    a = cv2.GaussianBlur(a, (0, 0), 0.7 * S)
-    return arr[..., :3], a
+    rgb, a = arr[..., :3], arr[..., 3]
+
+    # tepi bersih: buang sisa warna banner di piksel separa telus dengan
+    # menggantikannya dengan warna dalaman subjek berhampiran
+    core = (a > 0.98).astype(np.float32)
+    num = cv2.GaussianBlur(rgb * core[..., None], (0, 0), 3 * S)
+    den = cv2.GaussianBlur(core, (0, 0), 3 * S)[..., None]
+    inner = num / np.maximum(den, 1e-4)
+    dist = cv2.distanceTransform((a > 0.5).astype(np.uint8), cv2.DIST_L2, 5) / S
+    edge = np.clip(1 - dist / 3.0, 0, 1)[..., None]  # 3 px terluar
+    edge = np.maximum(edge, ((a > 0.01) & (a < 0.98)).astype(np.float32)[..., None])
+    rgb = rgb * (1 - edge) + inner * edge
+    # sisa banner putih di celah rambut: piksel dekat tepi yang jauh lebih
+    # terang daripada warna dalaman sekitarnya
+    num = cv2.GaussianBlur(rgb * core[..., None], (0, 0), 6 * S)
+    den = cv2.GaussianBlur(core, (0, 0), 6 * S)[..., None]
+    inner6 = num / np.maximum(den, 1e-4)
+    spill = (dist < 10) & ((rgb @ LUM) > (inner6 @ LUM) + 0.12)
+    w = cv2.GaussianBlur(spill.astype(np.float32), (0, 0), 0.8 * S)[..., None] * 0.9
+    rgb = rgb * (1 - w) + inner6 * w
+    # tajamkan sedikit (gambar sumber kecil, dibesarkan)
+    blur = cv2.GaussianBlur(rgb, (0, 0), 1.4 * S)
+    rgb = np.clip(rgb + 0.55 * (rgb - blur), 0, 1)
+    a = cv2.erode(a, np.ones((2 * S, 2 * S), np.uint8))
+    # licinkan kontur bergerigi (topeng asal resolusi rendah) + tepi lembut
+    a = cv2.GaussianBlur(a, (0, 0), 2.0 * S)
+    a = smoothstep(0.25, 0.75, a)
+    a = cv2.GaussianBlur(a, (0, 0), 0.9 * S)
+
+    # tepi bawah gambar dilebur ke ruang judul
+    yy = np.arange(H * S, dtype=np.float32)[:, None] / S
+    bottom = py + sub.height / S
+    a = a * (1 - smoothstep(bottom - 70, bottom - 4, yy))
+    return rgb, a
 
 
-def grade(img):
-    lum = img @ LUM
-    sh = (1 - smoothstep(0.0, 0.6, lum))[..., None]
-    hi = smoothstep(0.45, 1.0, lum)[..., None]
-    img = img + sh * np.array([-0.03, 0.01, 0.04]) + hi * np.array([0.05, 0.02, -0.05])
-    img = np.clip(img, 0, 1)
-    img = img + 0.12 * (img - 0.5) * (1 - np.abs(2 * img - 1))
-    return np.clip(img, 0, 1).astype(np.float32)
+def match_subject(rgb, a, xx):
+    """Padan warna subjek dengan cahaya senja: hangat dari kiri (matahari)."""
+    rgb = rgb * np.array([1.03, 0.99, 0.94], np.float32)
+    side = (1 - smoothstep(150, 750, xx))[..., None]
+    rgb = screen(rgb, side * 0.10, (1.0, 0.72, 0.42))
+    return np.clip(rgb, 0, 1)
 
 
 # ---------------------------------------------------------------- komposisi
 
 def main():
-    bg = grade(background())
+    bg = background()
     yy, xx = np.mgrid[0:H * S, 0:W * S].astype(np.float32) / S
 
-    # cahaya matahari & suar anamorfik di ufuk kiri
-    sun = (205 * BG_K - BG_X, (520 - BG_TOP) * BG_K)
-    d = np.hypot(xx - sun[0], (yy - sun[1]) * 1.7)
-    bg = screen(bg, np.exp(-(d / 380) ** 2)[..., None] * 0.5, (1.0, 0.62, 0.25))
-    dy = np.abs(yy - sun[1])
-    streak = (np.exp(-(dy / 2.2) ** 2) + 0.3 * np.exp(-(dy / 10) ** 2)) * \
-        np.exp(-np.abs(xx - sun[0]) / 320)
-    bg = screen(bg, streak[..., None] * 0.8, (1.0, 0.85, 0.65))
+    # cahaya matahari di ufuk kiri + suar mendatar halus
+    d = np.hypot(xx - SUN[0], (yy - SUN[1]) * 1.7)
+    bg = screen(bg, np.exp(-(d / 300) ** 2)[..., None] * 0.35, (1.0, 0.7, 0.35))
+    dy = np.abs(yy - SUN[1])
+    streak = np.exp(-(dy / 2.0) ** 2) * np.exp(-np.abs(xx - SUN[0]) / 260)
+    bg = screen(bg, streak[..., None] * 0.6, (1.0, 0.88, 0.7))
 
-    # judul: PUSAT DATA di atas, AI gergasi di belakang kepala
-    t1 = font("Cinzel[wght].ttf", 104, 800)
-    bg = metal(bg, [((540, 352), "PUSAT DATA", t1, 8)], 274, 354, SILVER,
-               (255, 255, 255), 14, 0.2)
-    big = font("Cinzel[wght].ttf", 500, 900)
-    bg = metal(bg, [((540, 800), "AI", big, 24)], 440, 800, GOLD,
-               (255, 120, 30), 30, 0.45, shadow=(10, 0.55))
-
-    # subjek: cahaya pinggir hangat dari arah matahari (kiri)
     srgb, sa = subject_layer()
-    srgb = grade(srgb)
-    edge = np.clip(sa - cv2.GaussianBlur(sa, (0, 0), 5 * S), 0, 1)
-    side = 1 - smoothstep(350, 800, xx)
-    rim = np.clip(edge * (0.25 + 0.75 * side) * 1.3, 0, 1)[..., None]
-    srgb = screen(srgb, rim, (1.0, 0.72, 0.4))
-    srgb = screen(srgb, (side * 0.10)[..., None], (1.0, 0.7, 0.4))
-    shadow = cv2.GaussianBlur(sa, (0, 0), 24 * S)[..., None]
-    img = bg * (1 - 0.25 * shadow)
+    srgb = match_subject(srgb, sa, xx)
+    shadow = cv2.GaussianBlur(sa, (0, 0), 16 * S)[..., None]
+    img = bg * (1 - 0.18 * shadow)
     img = img * (1 - sa[..., None]) + srgb * sa[..., None]
-
-    # vignet sangat ringan
-    v = np.hypot((xx - W / 2) / (W * 0.6), (yy - H * 0.5) / (H * 0.65))
-    img = img * (1 - 0.12 * smoothstep(0.7, 1.4, v))[..., None]
 
     img = typography(img)
 
-    # bloom halus + grain filem
-    bright = np.clip(img - 0.72, 0, 1) / 0.28
-    bl = cv2.GaussianBlur(bright, (0, 0), 14 * S) * 0.35
-    img = 1 - (1 - img) * (1 - bl * np.array([1, 0.8, 0.55], np.float32))
+    # grain filem halus
     grain = cv2.GaussianBlur(np.random.default_rng(11).normal(0, 1, (H * S, W * S))
                              .astype(np.float32), (0, 0), 0.6 * S)
     lum = np.clip(img, 0, 1) @ LUM
-    img = img + (grain * (0.03 * (1 - np.abs(2 * lum - 1)) + 0.008))[..., None]
+    img = img + (grain * (0.022 * (1 - np.abs(2 * lum - 1)) + 0.006))[..., None]
     out = to_img(img)
     out.save(HERE / "Pusat_Data_AI_wayang_2x.jpg", quality=94, subsampling=0)
     out.resize((W, H), Image.LANCZOS).save(HERE / "Pusat_Data_AI_wayang.jpg",
@@ -236,28 +277,42 @@ def main():
 
 def typography(base):
     # KISAH TOK RAUF: besar, TOK RAUF emas bercahaya
-    k1 = font("Cinzel[wght].ttf", 50, 600)
-    k2 = font("Cinzel[wght].ttf", 76, 900)
+    k1 = font("Cinzel[wght].ttf", 48, 700)
+    k2 = font("Cinzel[wght].ttf", 74, 900)
     w1 = tracked_width("KISAH", k1, 10) / S
     w2 = tracked_width("TOK RAUF", k2, 8) / S
-    x = 540 - (w1 + 30 + w2) / 2
-    base = metal(base, [((x + w1 / 2, 108), "KISAH", k1, 10)], 66, 108, SILVER)
-    base = metal(base, [((x + w1 + 30 + w2 / 2, 108), "TOK RAUF", k2, 8)], 50, 110, GOLD,
-                 (255, 130, 30), 16, 0.6)
+    x = 540 - (w1 + 28 + w2) / 2
+    base = metal(base, [((x + w1 / 2, 104), "KISAH", k1, 10)], 64, 104, SILVER, shadow=(5, 0.8))
+    base = metal(base, [((x + w1 + 28 + w2 / 2, 104), "TOK RAUF", k2, 8)], 48, 106, GOLD,
+                 (255, 130, 30), 14, 0.55, shadow=(5, 0.8))
+
+    # judul: PUSAT DATA (perak) + AI (emas, lebih besar, bercahaya)
+    t1 = font("Cinzel[wght].ttf", 96, 800)
+    t2 = font("Cinzel[wght].ttf", 168, 900)
+    wa = tracked_width("PUSAT DATA", t1, 6) / S
+    wb = tracked_width("AI", t2, 6) / S
+    gap = 26
+    x0 = 540 - (wa + gap + wb) / 2
+    base_y = 1150
+    base = metal(base, [((x0 + wa / 2, base_y), "PUSAT DATA", t1, 6)], base_y - 70, base_y,
+                 SILVER, (150, 190, 255), 16, 0.18, shadow=(6, 0.6))
+    ai_x = x0 + wa + gap + wb / 2
+    base = metal(base, [((ai_x, base_y), "AI", t2, 6)], base_y - 122, base_y, GOLD,
+                 (255, 125, 25), 26, 0.75, shadow=(6, 0.6))
+    # suar anamorfik halus merentas AI
+    yy, xx = np.mgrid[0:H * S, 0:W * S].astype(np.float32) / S
+    fy = base_y - 60
+    fl = np.exp(-((yy - fy) / 1.6) ** 2) * np.exp(-np.abs(xx - ai_x) / 210)
+    base = screen(base, fl[..., None] * 0.75, (1.0, 0.82, 0.55))
 
     tag = font("CormorantGaramond[wght].ttf", 34, 600)
     lab = font("Oswald[wght].ttf", 18, 500)
-    sub = font("Cinzel[wght].ttf", 40, 700)
+    sub = font("Cinzel[wght].ttf", 36, 700)
     foot = font("Oswald[wght].ttf", 10, 400)
     t_a, t_b = "Kabel internet dunia naik ke darat ", "di pantai ini."
     credit = "FOTO LATAR: AKUUJANG / WIKIMEDIA COMMONS, CC BY-SA 4.0  ·  PUSAT DATA MASIH DIRANCANG"
 
-    # bayang untuk teks biasa
-    base = drop_shadow(base, text_mask([
-        ((540, 162), t_a + t_b, tag, 1.0),
-        ((540, 238), "TOK RAUF UMUM  ·  DIRANCANG", lab, 7),
-        ((540, 1292), "TANJUNG BIDARA", sub, 16),
-        ((540, 1334), credit, foot, 1.8)]), 5, 0.85)
+    base = drop_shadow(base, text_mask([((540, 162), t_a + t_b, tag, 1.0)]), 5, 0.85)
     canvas = to_img(base)
     d = ImageDraw.Draw(canvas)
 
@@ -267,15 +322,15 @@ def typography(base):
     draw_tracked(d, (x, 162), t_a, tag, CREAM, 1.0, anchor="left")
     draw_tracked(d, (x + wa, 162), t_b, tag, (255, 190, 100), 1.0, anchor="left")
 
-    draw_tracked(d, (540, 238), "TOK RAUF UMUM  ·  DIRANCANG", lab, (255, 205, 130), 7)
+    draw_tracked(d, (540, 1012), "TOK RAUF UMUM  ·  DIRANCANG", lab, (240, 190, 120), 8)
 
-    wsub = draw_tracked(d, (540, 1292), "TANJUNG BIDARA", sub, (255, 214, 150), 16)
+    wsub = draw_tracked(d, (540, 1238), "TANJUNG BIDARA", sub, CREAM, 18)
     for sgn in (-1, 1):
-        x0 = 540 + sgn * (wsub / 2 + 20)
-        x1 = 540 + sgn * (wsub / 2 + 100)
-        d.line([(x0 * S, 1278 * S), (x1 * S, 1278 * S)], fill=GOLD_MID, width=int(2 * S))
+        x0 = 540 + sgn * (wsub / 2 + 22)
+        x1 = 540 + sgn * (wsub / 2 + 110)
+        d.line([(x0 * S, 1226 * S), (x1 * S, 1226 * S)], fill=GOLD_MID, width=int(1.5 * S))
 
-    draw_tracked(d, (540, 1334), credit, foot, (230, 230, 232), 1.8)
+    draw_tracked(d, (540, 1330), credit, foot, (120, 130, 145), 1.8)
     return np.asarray(canvas, np.float32) / 255
 
 
