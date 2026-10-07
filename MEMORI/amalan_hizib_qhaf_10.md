@@ -104,28 +104,30 @@ Sebelum membaca akan dia hendaklah membaca mengikut peraturan adab sebelum memul
 
 **HIZIB QHAF 10**
 
-| # | m/s | Bacaan | Rujukan |
-|---|---|---|---|
-| 1 | 213 | Al-Baqarah 255 (Ayat al-Kursi) | 2:255 |
-| 2 | 213 | Al-Baqarah 246 | 2:246 |
-| 3 | 214 | Ali 'Imran 181 | 3:181 |
-| 4 | 214 | An-Nisa' 77 | 4:77 |
-| 5 | 214 | Al-Ma'idah 27 | 5:27 |
-| 6 | 215 | Al-Ma'idah 112-114 | 5:112-114 |
-| 7 | 215 | Yunus 34-35 | 10:34-35 |
-| 8 | 216 | Hud 69-72 | 11:69-72 |
-| 9 | 216 | Ar-Ra'd 16 | 13:16 |
-| 10 | 217 | Taha 92-96 | 20:92-96 |
-| 11 | 217 | Al-Muzzammil 20 | 73:20 |
-| 12 | 218 | Doa "Allahumma bi haqqi Qaf" (Qaf 100 kali) | bukan ayat |
-| 13 | 218 | Basmalah, Al-Hadid 1-6 | 57:1-6 |
-| 14 | 219 | Al-Hasyr 21-24 | 59:21-24 |
-| 15 | 219 | Ali 'Imran 26-27 | 3:26-27 |
-| 16 | 220 | Basmalah, Al-Kafirun 1-6 | 109:1-6 |
-| 17 | 220 | Basmalah, Al-Ikhlas 1-4 | 112:1-4 |
-| 18 | 220 | Basmalah, Al-Falaq 1-5 | 113:1-5 |
-| 19 | 220 | Basmalah, An-Nas 1-6 | 114:1-6 |
-| 20 | 221 | Al-Fatihah 1-7 | 1:1-7 |
+| # | m/s | Bacaan | Rujukan | Huruf ق |
+|---|---|---|---|---|
+| 1 | 213 | Al-Baqarah 255 (Ayat al-Kursi) | 2:255 | 1 |
+| 2 | 213 | Al-Baqarah 246 | 2:246 | 10 |
+| 3 | 214 | Ali 'Imran 181 | 3:181 | 10 |
+| 4 | 214 | An-Nisa' 77 | 4:77 | 10 |
+| 5 | 214 | Al-Ma'idah 27 | 5:27 | 10 |
+| 6 | 215 | Al-Ma'idah 112-114 | 5:112-114 | 10 |
+| 7 | 215 | Yunus 34-35 | 10:34-35 | 10 |
+| 8 | 216 | Hud 69-72 | 11:69-72 | 10 |
+| 9 | 216 | Ar-Ra'd 16 | 13:16 | 10 |
+| 10 | 217 | Taha 92-96 | 20:92-96 | 10 |
+| 11 | 217 | Al-Muzzammil 20 | 73:20 | 10 |
+| 12 | 218 | Doa "Allahumma bi haqqi Qaf" (Qaf 100 kali) | bukan ayat | - |
+| 13 | 218 | Basmalah, Al-Hadid 1-6 | 57:1-6 | 2 |
+| 14 | 219 | Al-Hasyr 21-24 | 59:21-24 | 3 |
+| 15 | 219 | Ali 'Imran 26-27 | 3:26-27 | 3 |
+| 16 | 220 | Basmalah, Al-Kafirun 1-6 | 109:1-6 | 1 |
+| 17 | 220 | Basmalah, Al-Ikhlas 1-4 | 112:1-4 | 1 |
+| 18 | 220 | Basmalah, Al-Falaq 1-5 | 113:1-5 | 6 |
+| 19 | 220 | Basmalah, An-Nas 1-6 | 114:1-6 | 1 |
+| 20 | 221 | Al-Fatihah 1-7 | 1:1-7 | 1 |
+
+*Pemerhatian penyusun (kiraan, bukan keterangan kitab):* kitab tidak menomborkan bacaan; nombor # di atas ialah nombor penyusun. Bacaan #2 hingga #11 masing-masing mengandungi tepat 10 huruf ق, jumlahnya 100 (angka yang sama dengan "(ق ١٠٠ كالي)" pada doa). Pola ini sepadan dengan nama "Qhaf 10", tetapi kitab sendiri tidak menerangkan maksud angka 10 itu. Ayat al-Kursi (#1) mendahului 10 bacaan itu; doa (#12) dan bacaan #13 hingga #20 menyusul. Dalam booklet, 10 bacaan itu dinombor Qaf 1 hingga 10, dan yang lain dilabel Pembuka dan Bacaan Penutup (susunan penyusun).
 
 #### 1. Al-Baqarah 255 (Ayat al-Kursi) (2:255, m/s 213)
 
@@ -344,7 +346,7 @@ Assalamualaikum hai malaikat penjaga nadi 10, aku tahu akan asal usul mu, raja k
 ## 4. Belum lengkap dan perlu disahkan
 
 1. **Bilangan dan waktu bacaan Hizib Qhaf 10.** Kafiat di m/s 212 menyebut niat dan kelebihan sahaja, tanpa bilangan atau waktu bacaan. Satu-satunya bilangan dalam hizib ialah "(ق ١٠٠ كالي)" pada doa di m/s 218. Kalau kitab ada arahan bilangan atau waktu di halaman lain (contohnya m/s 211 atau sebelumnya), perlu gambar halaman itu.
-2. **Maksud "(ق ١٠٠ كالي)" pada doa m/s 218.** Perlu disahkan: sama ada huruf "Qaf" disebut 100 kali, atau seluruh doa itu dibaca 100 kali.
+2. **Maksud "(ق ١٠٠ كالي)" pada doa m/s 218.** Perlu disahkan: sama ada huruf "Qaf" disebut 100 kali, atau seluruh doa itu dibaca 100 kali. Pemerhatian penyusun: 10 bacaan qaf (#2 hingga #11) mengandungi 100 huruf ق semuanya; mungkin berkait, belum disahkan.
 3. **Sumber Doa Nadi 10.** Perlu gambar kulit atau halaman judul buku, serta nombor halaman. Bacaan Rumi saya bagi kepala halaman Jawi ("Panduan Amalan dan Hala Tuju Ahli-ahli Abjad Malaysia") belum disahkan.
 4. **Kaifiat Doa Nadi 10.** Halaman yang dihantar tiada arahan bilangan atau waktu bacaan. Kalau buku itu ada arahannya di halaman lain, perlu gambar itu.
 5. **Permulaan Langkahan Adam dan Hawa (m/s 139-140).** Bahagian ini menyusul selepas adab dan bersambung ke m/s 140. Kalau ia sebahagian amalan sebelum hizib, perlu gambar m/s 140 dan seterusnya; buat masa ini ia tidak dimasukkan dalam susunan.

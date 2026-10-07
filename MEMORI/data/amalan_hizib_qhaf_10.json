@@ -144,6 +144,7 @@
      "surah": "Al-Baqarah (Ayat al-Kursi)",
      "rujukan": "2:255",
      "basmalah": false,
+     "huruf_qaf": 1,
      "ayat": [
       {
        "no": 255,
@@ -158,6 +159,7 @@
      "surah": "Al-Baqarah",
      "rujukan": "2:246",
      "basmalah": false,
+     "huruf_qaf": 10,
      "ayat": [
       {
        "no": 246,
@@ -172,6 +174,7 @@
      "surah": "Ali 'Imran",
      "rujukan": "3:181",
      "basmalah": false,
+     "huruf_qaf": 10,
      "ayat": [
       {
        "no": 181,
@@ -186,6 +189,7 @@
      "surah": "An-Nisa'",
      "rujukan": "4:77",
      "basmalah": false,
+     "huruf_qaf": 10,
      "ayat": [
       {
        "no": 77,
@@ -200,6 +204,7 @@
      "surah": "Al-Ma'idah",
      "rujukan": "5:27",
      "basmalah": false,
+     "huruf_qaf": 10,
      "ayat": [
       {
        "no": 27,
@@ -214,6 +219,7 @@
      "surah": "Al-Ma'idah",
      "rujukan": "5:112-114",
      "basmalah": false,
+     "huruf_qaf": 10,
      "ayat": [
       {
        "no": 112,
@@ -236,6 +242,7 @@
      "surah": "Yunus",
      "rujukan": "10:34-35",
      "basmalah": false,
+     "huruf_qaf": 10,
      "ayat": [
       {
        "no": 34,
@@ -254,6 +261,7 @@
      "surah": "Hud",
      "rujukan": "11:69-72",
      "basmalah": false,
+     "huruf_qaf": 10,
      "ayat": [
       {
        "no": 69,
@@ -280,6 +288,7 @@
      "surah": "Ar-Ra'd",
      "rujukan": "13:16",
      "basmalah": false,
+     "huruf_qaf": 10,
      "ayat": [
       {
        "no": 16,
@@ -294,6 +303,7 @@
      "surah": "Taha",
      "rujukan": "20:92-96",
      "basmalah": false,
+     "huruf_qaf": 10,
      "ayat": [
       {
        "no": 92,
@@ -324,6 +334,7 @@
      "surah": "Al-Muzzammil",
      "rujukan": "73:20",
      "basmalah": false,
+     "huruf_qaf": 10,
      "ayat": [
       {
        "no": 20,
@@ -351,6 +362,7 @@
      "surah": "Al-Hadid",
      "rujukan": "57:1-6",
      "basmalah": true,
+     "huruf_qaf": 2,
      "ayat": [
       {
        "no": 1,
@@ -385,6 +397,7 @@
      "surah": "Al-Hasyr",
      "rujukan": "59:21-24",
      "basmalah": false,
+     "huruf_qaf": 3,
      "ayat": [
       {
        "no": 21,
@@ -411,6 +424,7 @@
      "surah": "Ali 'Imran",
      "rujukan": "3:26-27",
      "basmalah": false,
+     "huruf_qaf": 3,
      "ayat": [
       {
        "no": 26,
@@ -429,6 +443,7 @@
      "surah": "Al-Kafirun",
      "rujukan": "109:1-6",
      "basmalah": true,
+     "huruf_qaf": 1,
      "ayat": [
       {
        "no": 1,
@@ -463,6 +478,7 @@
      "surah": "Al-Ikhlas",
      "rujukan": "112:1-4",
      "basmalah": true,
+     "huruf_qaf": 1,
      "ayat": [
       {
        "no": 1,
@@ -489,6 +505,7 @@
      "surah": "Al-Falaq",
      "rujukan": "113:1-5",
      "basmalah": true,
+     "huruf_qaf": 6,
      "ayat": [
       {
        "no": 1,
@@ -519,6 +536,7 @@
      "surah": "An-Nas",
      "rujukan": "114:1-6",
      "basmalah": true,
+     "huruf_qaf": 1,
      "ayat": [
       {
        "no": 1,
@@ -553,6 +571,7 @@
      "surah": "Al-Fatihah",
      "rujukan": "1:1-7",
      "basmalah": false,
+     "huruf_qaf": 1,
      "ayat": [
       {
        "no": 1,
@@ -602,7 +621,7 @@
   },
   {
    "perkara": "Maksud \"(ق ١٠٠ كالي)\" pada doa m/s 218",
-   "butiran": "Perlu disahkan: sama ada huruf \"Qaf\" disebut 100 kali, atau seluruh doa itu dibaca 100 kali."
+   "butiran": "Perlu disahkan: sama ada huruf \"Qaf\" disebut 100 kali, atau seluruh doa itu dibaca 100 kali. Pemerhatian penyusun: 10 bacaan qaf (#2 hingga #11) mengandungi 100 huruf ق semuanya; mungkin berkait, belum disahkan."
   },
   {
    "perkara": "Sumber Doa Nadi 10",
